@@ -1,388 +1,164 @@
-# **User and Video Modelling using Hooks and JWT**
+# **Handling File Uploads: Multer and Cloudinary**
 
-When building a complex application like a video-sharing platform, the foundation is the **data model**. This is the blueprint that defines what kind of information you need to store and how different pieces of information relate to each other. This guide will walk you through the entire process of creating robust and secure data models for users and videos using Mongoose.
-
------
-
-## **Part 1: Data Modeling - The Blueprint for Your Application**
-
-First, we need to define the structure of our data. We'll create two main blueprints, or **schemas**: one for `User` and one for `Video`.
-
-### **The User Model**
-
-The `userSchema` defines all the properties a user can have in our application.
-
-```javascript
-// user.model.js
-import mongoose, { Schema } from "mongoose";
-
-const userSchema = new mongoose.Schema(
-    {
-        username: {
-            type: String,
-            required: true,
-            unique: true,
-            lowercase: true,
-            trim: true, // Removes whitespace from both ends of a string
-            index: true, // Creates a database index for faster searching
-        },
-        email: {
-            type: String,
-            required: true,
-            unique: true,
-            lowercase: true,
-            trim: true,
-        },
-        fullName: {
-            type: String,
-            required: true,
-            trim: true,
-            index: true,
-        },
-        avatar: {
-            type: String, // URL to the image
-            required: true,
-        },
-        coverImage: {
-            type: String, // URL to the image
-        },
-        watchHistory: [
-            {
-                type: Schema.Types.ObjectId,
-                ref: "Video", // Reference to the Video model
-            },
-        ],
-        password: {
-            type: String,
-            required: [true, "Password is required"],
-        },
-        refreshToken: {
-            type: String,
-        },
-    },
-    { timestamps: true } // Automatically adds createdAt and updatedAt fields
-);
-```
-
-  * **Validation Rules**: Fields like `username` and `email` use several important rules:
-      * **`required: true`**: This field must have a value.
-      * **`unique: true`**: No two users can have the same value for this field.
-      * **`lowercase: true`**: Automatically converts input to lowercase.
-      * **`trim: true`**: Removes any accidental spaces from the beginning or end of the input.
-      * **`index: true`**: This is a performance optimization. Like an index in a book, it makes searching the database by this field much faster.
-  * **`watchHistory`**: This is an **array** that holds a list of video IDs. The `ref: "Video"` is crucial—it creates a direct link between a user and the videos they've watched, telling our database that each ID in this array corresponds to a document in the `Video` collection.
-  * **`timestamps: true`**: This option automatically adds `createdAt` and `updatedAt` fields to our documents, which is useful for tracking when data is created or modified.
-
-### **The Video Model**
-
-The `videoSchema` defines the structure for every video uploaded to the platform.
-
-```javascript
-// video.model.js
-import mongoose, { Schema } from "mongoose";
-
-const videoSchema = new mongoose.Schema(
-    {
-        videoFile: {
-            type: String, // URL from a cloud service like Cloudinary
-            required: true,
-        },
-        thumbnail: {
-            type: String, // URL from a cloud service
-            required: true,
-        },
-        owner: {
-            type: Schema.Types.ObjectId,
-            ref: "User", // A reference to the user who uploaded the video
-        },
-        title: {
-            type: String,
-            required: true,
-        },
-        description: {
-            type: String,
-        },
-        duration: {
-            type: Number, // Video duration in seconds
-        },
-        views: {
-            type: Number,
-            default: 0, // Videos start with 0 views
-        },
-        isPublished: {
-            type: Boolean,
-            default: true, // Default to published
-        },
-    },
-    { timestamps: true }
-);
-```
-
-  * **`videoFile` & `thumbnail`**: These fields store URLs. It's bad practice to store large files like videos or images directly in your database. Instead, we upload them to a cloud service (like Cloudinary) and save the access URL here.
-  * **`owner`**: This is another critical **reference**. It links each video back to the user who uploaded it via the `ref: "User"` property.
-  * **`views`**: This field uses `default: 0` to ensure that every new video automatically starts with a view count of zero.
+One of the most common tasks in a backend application is managing file uploads. While a frontend application allows a user to *select* a file from their computer, it's the backend's job to receive, process, and store that file. This guide will walk you through a professional, production-grade approach to handling file uploads using **Multer** for processing and **Cloudinary** for cloud storage.
 
 -----
 
-## **Part 2: Security and Authentication**
+## **Part 1: The Philosophy of File Handling**
 
-With our blueprints ready, we need to add security. We'll install two libraries: **`bcrypt`** for securely hashing passwords and **`jsonwebtoken`** for managing user sessions.
+Before writing any code, it's important to understand two key principles:
+
+1.  **Don't Store Files on Your Own Server**: For a real application, you should never permanently store user-uploaded files on the same server that runs your code. It's inefficient, doesn't scale well, and can lead to data loss. Instead, use a specialized cloud service built for file storage, like Amazon S3, or in our case, **Cloudinary**.
+2.  **Middleware is Your Gatekeeper**: When a request containing a file comes to your server, you need something to process it before it hits your main logic. This is a perfect job for middleware.
+
+**Analogy for Middleware**: The user's note provides a perfect analogy: **"Jaane se pehle mujhse mil k jaana"** (Before you go to your destination, you must meet with me first). Middleware is like a security guard or a receptionist for your routes. It intercepts the incoming request, can perform actions on it (like processing a file), and then decides whether to pass it along to the final destination (your controller). For file uploads, we'll use a popular middleware called **Multer**.
+
+-----
+
+## **Part 2: The Two-Step Upload Strategy**
+
+Instead of sending a file directly from the user to the cloud, a more robust, professional approach involves two steps:
+
+1.  The file is first uploaded from the user to a **temporary local folder** on your server.
+2.  From that temporary folder, the file is then uploaded to the **permanent cloud storage** (Cloudinary).
+
+**Why use two steps?**
+This makes the process more reliable. Think of the temporary folder as a loading bay. If the final upload to the cloud fails for any reason, the file is still safe in the temporary location, and we can easily retry the upload or send an error message to the user. This also gives us a chance to perform validations on the file before sending it to its final destination. We will use Node.js's built-in **`fs` (File System)** module to manage this temporary file.
+
+-----
+
+## **Part 3: Configuring the Middleware (`multer`)**
+
+First, install the library:
 
 ```bash
-npm install bcrypt jsonwebtoken
+npm install multer
 ```
 
-### **Hashing Passwords with Mongoose Hooks**
+Next, we'll create a middleware file to configure `multer` to save files to our temporary loading bay.
 
-We must **never** store passwords in plain text. Mongoose **hooks** (or middleware) are functions that run automatically at specific points. We will use a `pre('save')` hook to encrypt passwords *before* they are saved.
-
-**The Code: A "Pre-Save" Hook**
-This code is added to your `user.model.js` file.
+### **`middlewares/multer.middleware.js`**
 
 ```javascript
-userSchema.pre("save", async function (next) {
-    // Only run this function if the password was actually modified
-    if (!this.isModified("password")) return next();
+import multer from "multer";
 
-    // Hash the password with a cost factor of 10
-    this.password = await bcrypt.hash(this.password, 10);
-    next();
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, "./public/temp");
+    },
+    filename: function (req, file, cb) {
+        // In a real app, you'd want to make the filename unique
+        // to avoid conflicts if two users upload files with the same name.
+        cb(null, file.originalname);
+    },
+});
+
+export const upload = multer({
+    storage,
 });
 ```
 
-This hook intercepts the save process. If the password has been changed, it uses `bcrypt` to hash it and then continues the save operation. The `10` represents the "salt rounds," a measure of how strong the encryption is.
-
-### **Creating Custom Methods for Authentication**
-
-Mongoose lets us add our own helper functions, called **methods**, to our schemas.
-
-**1. Checking the Password**
-This method securely compares a login password attempt with the stored hash.
-
-```javascript
-userSchema.methods.isPasswordCorrect = async function (password) {
-    return await bcrypt.compare(password, this.password);
-};
-```
-
-**2. Generating JSON Web Tokens (JWT)**
-**JWTs** are like temporary digital ID cards. After a user logs in, the server gives them a signed token. The user includes this token in future requests to prove their identity.
-
-```javascript
-// Method to generate a short-lived access token
-userSchema.methods.generateAccessToken = function () {
-    return jwt.sign(
-        {
-            _id: this._id,
-            email: this.email,
-            username: this.username,
-            fullName: this.fullName,
-        },
-        process.env.ACCESS_TOKEN_SECRET,
-        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
-    );
-};
-
-// Method to generate a long-lived refresh token
-userSchema.methods.generateRefreshToken = function () {
-    return jwt.sign(
-        { _id: this._id },
-        process.env.REFRESH_TOKEN_SECRET,
-        { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
-    );
-};
-```
-
-  * **Access Token**: Used for day-to-day API requests. It's short-lived (e.g., expires in 1 day) for security.
-  * **Refresh Token**: Used only to get a new access token when the old one expires. It is long-lived (e.g., 10 days) and is stored in the database.
-
-### **Environment Variables for Security**
-
-Your secret keys must be kept out of your code in a `.env` file.
-
-```
-ACCESS_TOKEN_SECRET=your-super-secret-and-long-access-string
-ACCESS_TOKEN_EXPIRY=1d
-
-REFRESH_TOKEN_SECRET=your-even-more-secret-and-longer-refresh-string
-REFRESH_TOKEN_EXPIRY=10d
-```
+  * `multer.diskStorage()`: We tell `multer` that we want to save files to the disk (our server's local storage).
+  * `destination`: This function determines the folder where the temporary files will be saved. We've chosen a folder named `temp` inside our `public` directory.
+  * `filename`: This function determines the name of the file inside the temporary folder. For simplicity, we are using the file's original name.
+  * `export const upload`: We export the configured `multer` instance, which is now ready to be used in our routes.
 
 -----
 
-## **Part 3: Handling Complex Queries with Aggregation**
+## **Part 4: Setting Up the Cloud Storage (Cloudinary)**
 
-For complex features like a recommendation engine or detailed watch history analysis, simple queries aren't enough. We need **MongoDB Aggregation Pipelines**.
+Now that we can receive files, we need to set up our permanent storage.
 
-**Analogy**: An aggregation pipeline is like a factory assembly line for your data. Data goes in one end and passes through a series of stages (filtering, sorting, grouping) until it comes out the other end perfectly formatted for your needs.
+1.  **Create a Cloudinary Account**: Go to [cloudinary.com](https://cloudinary.com/) and create a free account.
+2.  **Get Your Credentials**: On your account dashboard, you will find your **Cloud Name**, **API Key**, and **API Secret**.
+3.  **Store in `.env`**: Add these credentials to your `.env` file. Never hard-code them in your application.
 
-To make this easier, especially with pagination (showing data page by page), we use the `mongoose-aggregate-paginate-v2` plugin.
+**`.env` File**
 
-```javascript
-// Add this to your video.model.js
-import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
-
-// ... after your schema definition ...
-videoSchema.plugin(mongooseAggregatePaginate);
+```
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
 ```
 
-This simple line adds powerful pagination capabilities to your complex aggregation queries.
+Now, let's create a helper function to handle the upload logic.
 
------
-
-## **Part 4: The Final Code**
-
-Here is the final, complete code for both models.
-
-### **`user.model.js`**
+### **`utils/cloudinary.js`**
 
 ```javascript
-import mongoose, { Schema } from "mongoose";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
 
-const userSchema = new Schema(
-    {
-        username: {
-            type: String,
-            required: true,
-            unique: true,
-            lowercase: true,
-            trim: true,
-            index: true,
-        },
-        email: {
-            type: String,
-            required: true,
-            unique: true,
-            lowercase: true,
-            trim: true,
-        },
-        fullName: {
-            type: String,
-            required: true,
-            trim: true,
-            index: true,
-        },
-        avatar: {
-            type: String, // Cloudinary URL
-            required: true,
-        },
-        coverImage: {
-            type: String, // Cloudinary URL
-        },
-        watchHistory: [
-            {
-                type: Schema.Types.ObjectId,
-                ref: "Video",
-            },
-        ],
-        password: {
-            type: String,
-            required: [true, "Password is required"],
-        },
-        refreshToken: {
-            type: String,
-        },
-    },
-    {
-        timestamps: true,
-    }
-);
-
-// Mongoose "pre" hook to hash password before saving
-userSchema.pre("save", async function (next) {
-    if (!this.isModified("password")) return next();
-
-    this.password = await bcrypt.hash(this.password, 10);
-    next();
+// Configure Cloudinary with your credentials from the .env file
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Custom method to check if the password is correct
-userSchema.methods.isPasswordCorrect = async function (password) {
-    return await bcrypt.compare(password, this.password);
+const uploadOnCloudinary = async (localFilePath) => {
+    try {
+        if (!localFilePath) return null;
+
+        // Upload the file to Cloudinary
+        const response = await cloudinary.uploader.upload(localFilePath, {
+            resource_type: "auto", // Automatically detect the file type
+        });
+
+        // File has been uploaded successfully
+        console.log("File is uploaded on Cloudinary: ", response.url);
+        fs.unlinkSync(localFilePath); // Remove the locally saved temporary file
+        return response;
+    } catch (error) {
+        fs.unlinkSync(localFilePath); // Remove the temp file if the upload fails
+        return null;
+    }
 };
 
-// Custom method to generate a short-lived access token
-userSchema.methods.generateAccessToken = function () {
-    return jwt.sign(
-        {
-            _id: this._id,
-            email: this.email,
-            username: this.username,
-            fullName: this.fullName,
-        },
-        process.env.ACCESS_TOKEN_SECRET,
-        {
-            expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
-        }
-    );
-};
-
-// Custom method to generate a long-lived refresh token
-userSchema.methods.generateRefreshToken = function () {
-    return jwt.sign(
-        {
-            _id: this._id,
-        },
-        process.env.REFRESH_TOKEN_SECRET,
-        {
-            expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
-        }
-    );
-};
-
-export const User = mongoose.model("User", userSchema);
+export { uploadOnCloudinary };
 ```
 
-### **`video.model.js`**
+  * `cloudinary.config()`: This initializes the Cloudinary library with your secret keys.
+  * `cloudinary.uploader.upload()`: This is the core function that takes the path to our temporary local file (`localFilePath`) and uploads it to Cloudinary.
+  * **`fs.unlinkSync(localFilePath)`**: This is a critical cleanup step. Whether the upload succeeds or fails, we use the `fs` module to **delete the temporary file** from our local server. This prevents our server from filling up with unnecessary files.
+
+-----
+
+## **Part 5: Using the Middleware in Your Routes**
+
+Finally, you can use the `upload` middleware in any route that needs to handle a file upload. `Multer` will process the file and make it available in your controller via `req.file` or `req.files`.
+
+Here are the common ways you'll use it:
+
+**1. Uploading a Single File**
+Use `upload.single('fieldName')`. The file will be available at `req.file`.
 
 ```javascript
-import mongoose, { Schema } from "mongoose";
-import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
+// Example: In a user registration route
+import { upload } from "../middlewares/multer.middleware.js";
 
-const videoSchema = new Schema(
-    {
-        videoFile: {
-            type: String, // Cloudinary URL
-            required: true,
-        },
-        thumbnail: {
-            type: String, // Cloudinary URL
-            required: true,
-        },
-        title: {
-            type: String,
-            required: true,
-        },
-        description: {
-            type: String,
-            required: true,
-        },
-        duration: {
-            type: Number,
-            required: true,
-        },
-        views: {
-            type: Number,
-            default: 0,
-        },
-        isPublished: {
-            type: Boolean,
-            default: true,
-        },
-        owner: {
-            type: Schema.Types.ObjectId,
-            ref: "User",
-        },
-    },
-    {
-        timestamps: true,
-    }
+router.post("/register", upload.single("avatar"), registerUser);
+```
+
+**2. Uploading Multiple Files (Same Field)**
+Use `upload.array('fieldName', maxCount)`. The files will be an array at `req.files`.
+
+```javascript
+// Example: Uploading gallery images
+router.post("/upload-gallery", upload.array("photos", 12), uploadPhotos);
+```
+
+**3. Uploading Multiple Files (Different Fields)**
+Use `upload.fields([...])`. `req.files` will be an object where the keys are the field names.
+
+```javascript
+// Example: A user profile with an avatar and a cover image
+router.post(
+    "/update-profile",
+    upload.fields([
+        { name: "avatar", maxCount: 1 },
+        { name: "coverImage", maxCount: 1 },
+    ]),
+    updateProfile
 );
-
-// Apply the plugin for aggregation and pagination
-videoSchema.plugin(mongooseAggregatePaginate);
-
-export const Video = mongoose.model("Video", videoSchema);
 ```
