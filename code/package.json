@@ -1,16 +1,16 @@
 {
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "",
-  "license": "ISC",
-  "author": "",
-  "type": "module",
-  "main": "backend/server.js",
-  "scripts": {
-    "start": "node backend/server.js"
-  },
-  "dependencies": {
-    "express": "^5.1.0",
-    "mongoose": "^8.18.1"
-  }
+    "name": "backend",
+    "version": "1.0.0",
+    "description": "A backend learning project",
+    "license": "ISC",
+    "author": "Aditya Kumar",
+    "type": "module",
+    "main": "index.js",
+    "scripts": {
+        "backend": "nodemon src/index.js"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.10",
+        "prettier": "^3.6.2"
+    }
 }
