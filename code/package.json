@@ -1,17 +1,16 @@
 {
-    "name": "1.-deploy",
-    "version": "1.0.0",
-    "description": "A basic app to deploy",
-    "keywords": [],
-    "license": "ISC",
-    "author": "Aditya",
-    "type": "commonjs",
-    "main": "index.js",
-    "scripts": {
-        "start": "node index.js"
-    },
-    "dependencies": {
-        "dotenv": "^17.2.2",
-        "express": "^5.1.0"
-    }
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mongoose": "^8.18.1"
+  }
 }
