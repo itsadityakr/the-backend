@@ -1,163 +1,388 @@
-# **Anatomy of a Professional Node.js Backend**
+# **User and Video Modelling using Hooks and JWT**
 
-This guide will dissect the structure of a production-ready backend application built with Node.js and Express. We will explore how different files and utilities work together to create a system that is scalable, maintainable, and robust. We'll cover the application's startup sequence, middleware configuration, database connection, and the essential utilities that keep the code clean and consistent.
+When building a complex application like a video-sharing platform, the foundation is the **data model**. This is the blueprint that defines what kind of information you need to store and how different pieces of information relate to each other. This guide will walk you through the entire process of creating robust and secure data models for users and videos using Mongoose.
 
 -----
 
-### **Part 1: The Launch Sequence - `index.js` (The Entry Point)**
+## **Part 1: Data Modeling - The Blueprint for Your Application**
 
-Everything starts with the `index.js` file. Its role is to be the application's orchestrator, responsible for loading configurations and initiating the main processes in the correct order.
+First, we need to define the structure of our data. We'll create two main blueprints, or **schemas**: one for `User` and one for `Video`.
+
+### **The User Model**
+
+The `userSchema` defines all the properties a user can have in our application.
 
 ```javascript
-// index.js
-import dotenv from "dotenv";
-import connectDB from "./db/index.js";
-import { app } from "./app.js"; // Assuming app is exported from app.js
+// user.model.js
+import mongoose, { Schema } from "mongoose";
 
-dotenv.config({
-    path: "./.env",
-});
-
-connectDB()
-    .then(() => {
-        app.listen(process.env.PORT || 8000, () => {
-            console.log(`⚙️  Server is running at port : ${process.env.PORT}`);
-        });
-    })
-    .catch((err) => {
-        console.log("MONGO db connection failed !!! ", err);
-    });
+const userSchema = new mongoose.Schema(
+    {
+        username: {
+            type: String,
+            required: true,
+            unique: true,
+            lowercase: true,
+            trim: true, // Removes whitespace from both ends of a string
+            index: true, // Creates a database index for faster searching
+        },
+        email: {
+            type: String,
+            required: true,
+            unique: true,
+            lowercase: true,
+            trim: true,
+        },
+        fullName: {
+            type: String,
+            required: true,
+            trim: true,
+            index: true,
+        },
+        avatar: {
+            type: String, // URL to the image
+            required: true,
+        },
+        coverImage: {
+            type: String, // URL to the image
+        },
+        watchHistory: [
+            {
+                type: Schema.Types.ObjectId,
+                ref: "Video", // Reference to the Video model
+            },
+        ],
+        password: {
+            type: String,
+            required: [true, "Password is required"],
+        },
+        refreshToken: {
+            type: String,
+        },
+    },
+    { timestamps: true } // Automatically adds createdAt and updatedAt fields
+);
 ```
 
-**Execution Flow:**
+  * **Validation Rules**: Fields like `username` and `email` use several important rules:
+      * **`required: true`**: This field must have a value.
+      * **`unique: true`**: No two users can have the same value for this field.
+      * **`lowercase: true`**: Automatically converts input to lowercase.
+      * **`trim: true`**: Removes any accidental spaces from the beginning or end of the input.
+      * **`index: true`**: This is a performance optimization. Like an index in a book, it makes searching the database by this field much faster.
+  * **`watchHistory`**: This is an **array** that holds a list of video IDs. The `ref: "Video"` is crucial—it creates a direct link between a user and the videos they've watched, telling our database that each ID in this array corresponds to a document in the `Video` collection.
+  * **`timestamps: true`**: This option automatically adds `createdAt` and `updatedAt` fields to our documents, which is useful for tracking when data is created or modified.
 
-1.  **Load Environment**: `dotenv.config()` is called first to load all variables from the `.env` file (like your database URL and port number).
-2.  **Connect to Database**: `connectDB()` is called. This function is asynchronous, so it returns a **Promise**.
-3.  **Handle the Promise**:
-      * **`.then(() => {...})`**: This block of code will only execute if the `connectDB` Promise resolves successfully (meaning the database connection was successful). **Only then** do we start the web server with `app.listen()`. This is a critical design choice: your application should not start accepting web traffic if it cannot talk to its database.
-      * **`.catch((err) => {...})`**: If the `connectDB` Promise is rejected (the connection fails), this block executes, logging a fatal error.
+### **The Video Model**
+
+The `videoSchema` defines the structure for every video uploaded to the platform.
+
+```javascript
+// video.model.js
+import mongoose, { Schema } from "mongoose";
+
+const videoSchema = new mongoose.Schema(
+    {
+        videoFile: {
+            type: String, // URL from a cloud service like Cloudinary
+            required: true,
+        },
+        thumbnail: {
+            type: String, // URL from a cloud service
+            required: true,
+        },
+        owner: {
+            type: Schema.Types.ObjectId,
+            ref: "User", // A reference to the user who uploaded the video
+        },
+        title: {
+            type: String,
+            required: true,
+        },
+        description: {
+            type: String,
+        },
+        duration: {
+            type: Number, // Video duration in seconds
+        },
+        views: {
+            type: Number,
+            default: 0, // Videos start with 0 views
+        },
+        isPublished: {
+            type: Boolean,
+            default: true, // Default to published
+        },
+    },
+    { timestamps: true }
+);
+```
+
+  * **`videoFile` & `thumbnail`**: These fields store URLs. It's bad practice to store large files like videos or images directly in your database. Instead, we upload them to a cloud service (like Cloudinary) and save the access URL here.
+  * **`owner`**: This is another critical **reference**. It links each video back to the user who uploaded it via the `ref: "User"` property.
+  * **`views`**: This field uses `default: 0` to ensure that every new video automatically starts with a view count of zero.
 
 -----
 
-## **Part 2: The Core Application - `app.js` (Middleware Configuration)**
+## **Part 2: Security and Authentication**
 
-The `app.js` file is dedicated to setting up the Express application itself. All the global configurations and middleware are defined here, keeping the `index.js` file clean. This is a key principle called **separation of concerns**.
+With our blueprints ready, we need to add security. We'll install two libraries: **`bcrypt`** for securely hashing passwords and **`jsonwebtoken`** for managing user sessions.
+
+```bash
+npm install bcrypt jsonwebtoken
+```
+
+### **Hashing Passwords with Mongoose Hooks**
+
+We must **never** store passwords in plain text. Mongoose **hooks** (or middleware) are functions that run automatically at specific points. We will use a `pre('save')` hook to encrypt passwords *before* they are saved.
+
+**The Code: A "Pre-Save" Hook**
+This code is added to your `user.model.js` file.
 
 ```javascript
-// app.js
-import express from "express";
-import cors from "cors";
-import cookieParser from "cookie-parser";
+userSchema.pre("save", async function (next) {
+    // Only run this function if the password was actually modified
+    if (!this.isModified("password")) return next();
 
-const app = express();
+    // Hash the password with a cost factor of 10
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
+});
+```
 
-app.use(
-    cors({
-        origin: process.env.CORS_ORIGIN,
-        credentials: true,
-    })
+This hook intercepts the save process. If the password has been changed, it uses `bcrypt` to hash it and then continues the save operation. The `10` represents the "salt rounds," a measure of how strong the encryption is.
+
+### **Creating Custom Methods for Authentication**
+
+Mongoose lets us add our own helper functions, called **methods**, to our schemas.
+
+**1. Checking the Password**
+This method securely compares a login password attempt with the stored hash.
+
+```javascript
+userSchema.methods.isPasswordCorrect = async function (password) {
+    return await bcrypt.compare(password, this.password);
+};
+```
+
+**2. Generating JSON Web Tokens (JWT)**
+**JWTs** are like temporary digital ID cards. After a user logs in, the server gives them a signed token. The user includes this token in future requests to prove their identity.
+
+```javascript
+// Method to generate a short-lived access token
+userSchema.methods.generateAccessToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+            email: this.email,
+            username: this.username,
+            fullName: this.fullName,
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    );
+};
+
+// Method to generate a long-lived refresh token
+userSchema.methods.generateRefreshToken = function () {
+    return jwt.sign(
+        { _id: this._id },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    );
+};
+```
+
+  * **Access Token**: Used for day-to-day API requests. It's short-lived (e.g., expires in 1 day) for security.
+  * **Refresh Token**: Used only to get a new access token when the old one expires. It is long-lived (e.g., 10 days) and is stored in the database.
+
+### **Environment Variables for Security**
+
+Your secret keys must be kept out of your code in a `.env` file.
+
+```
+ACCESS_TOKEN_SECRET=your-super-secret-and-long-access-string
+ACCESS_TOKEN_EXPIRY=1d
+
+REFRESH_TOKEN_SECRET=your-even-more-secret-and-longer-refresh-string
+REFRESH_TOKEN_EXPIRY=10d
+```
+
+-----
+
+## **Part 3: Handling Complex Queries with Aggregation**
+
+For complex features like a recommendation engine or detailed watch history analysis, simple queries aren't enough. We need **MongoDB Aggregation Pipelines**.
+
+**Analogy**: An aggregation pipeline is like a factory assembly line for your data. Data goes in one end and passes through a series of stages (filtering, sorting, grouping) until it comes out the other end perfectly formatted for your needs.
+
+To make this easier, especially with pagination (showing data page by page), we use the `mongoose-aggregate-paginate-v2` plugin.
+
+```javascript
+// Add this to your video.model.js
+import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
+
+// ... after your schema definition ...
+videoSchema.plugin(mongooseAggregatePaginate);
+```
+
+This simple line adds powerful pagination capabilities to your complex aggregation queries.
+
+-----
+
+## **Part 4: The Final Code**
+
+Here is the final, complete code for both models.
+
+### **`user.model.js`**
+
+```javascript
+import mongoose, { Schema } from "mongoose";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+
+const userSchema = new Schema(
+    {
+        username: {
+            type: String,
+            required: true,
+            unique: true,
+            lowercase: true,
+            trim: true,
+            index: true,
+        },
+        email: {
+            type: String,
+            required: true,
+            unique: true,
+            lowercase: true,
+            trim: true,
+        },
+        fullName: {
+            type: String,
+            required: true,
+            trim: true,
+            index: true,
+        },
+        avatar: {
+            type: String, // Cloudinary URL
+            required: true,
+        },
+        coverImage: {
+            type: String, // Cloudinary URL
+        },
+        watchHistory: [
+            {
+                type: Schema.Types.ObjectId,
+                ref: "Video",
+            },
+        ],
+        password: {
+            type: String,
+            required: [true, "Password is required"],
+        },
+        refreshToken: {
+            type: String,
+        },
+    },
+    {
+        timestamps: true,
+    }
 );
 
-app.use(express.json({ limit: "16kb" }));
-app.use(express.urlencoded({ extended: true, limit: "16kb" }));
-app.use(express.static("public"));
-app.use(cookieParser());
+// Mongoose "pre" hook to hash password before saving
+userSchema.pre("save", async function (next) {
+    if (!this.isModified("password")) return next();
 
-export { app };
-```
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
+});
 
-**Middleware Explained:**
-Middleware are functions that process incoming requests before they reach your main route handlers.
-
-  * **`cors()`**: Manages **Cross-Origin Resource Sharing**. By default, browsers block web pages from making API requests to a different domain. This middleware unlocks that.
-      * **A critical note on `CORS_ORIGIN = *`**: The `*` wildcard allows requests from **any** domain. While this is easy for development, it is a **major security risk in production**. It means any malicious website can make requests to your API from a user's browser. In a live application, you should always restrict the origin to the specific domain of your frontend (e.g., `origin: "https://your-frontend.com"`).
-  * **`express.json()`**: Parses incoming requests that have a JSON payload, making the data available on `req.body`.
-  * **`express.urlencoded()`**: Parses incoming requests from HTML forms.
-  * **`express.static("public")`**: Serves static files (like images, CSS, or HTML files) from a directory named `public`.
-  * **`cookieParser()`**: Parses cookies attached to the client's request, making them available on `req.cookies`.
-
------
-
-## **Part 3: The Dedicated Utilities (The `utils` Folder)**
-
-Utilities are reusable tools that make your main application logic cleaner and more consistent.
-
-### **`asyncHandler` - The Error Safety Net**
-
-This is a higher-order function that wraps your asynchronous route logic.
-
-```javascript
-// utils/asyncHandler.js
-const asyncHandler = (requestHandler) => {
-    return (req, res, next) => {
-        Promise.resolve(requestHandler(req, res, next)).catch((err) => next(err));
-    };
-};
-```
-
-Its purpose is to remove repetitive `try...catch` blocks from your controllers. You wrap your controller function in `asyncHandler`, and it will automatically catch any errors and pass them on to your error-handling middleware.
-
-### **`ApiError` and `ApiResponse` - The Standardizers**
-
-These two classes ensure that every response your API sends has a consistent and predictable structure.
-
-```javascript
-// utils/ApiError.js
-class ApiError extends Error {
-    constructor(statusCode, message = "Something went wrong", errors = [], stack = "") {
-        super(message);
-        this.statusCode = statusCode;
-        this.data = null;
-        this.success = false;
-        this.errors = errors;
-        // ...stack trace logic
-    }
-}
-```
-
-```javascript
-// utils/ApiResponse.js
-class ApiResponse {
-    constructor(statusCode, data, message = "Success") {
-        this.statusCode = statusCode;
-        this.data = data;
-        this.message = message;
-        this.success = statusCode < 400;
-    }
-}
-```
-
-  * `ApiError` is used to generate consistent error responses.
-  * `ApiResponse` is used for successful responses, making life easier for the frontend developers who consume your API. The `statusCode < 400` is a clever way to automatically set the `success` flag based on standard HTTP status codes.
-
------
-
-## **Part 4: The Database Worker - `db/index.js`**
-
-This module has one single responsibility: connect to the database.
-
-```javascript
-// db/index.js
-import mongoose from "mongoose";
-import { DB_NAME } from "../constants.js"; // Assuming DB_NAME is in a constants file
-
-const connectDB = async () => {
-    try {
-        const connectionInstance = await mongoose.connect(
-            `${process.env.MONGODB_URL}/${DB_NAME}`
-        );
-        console.log(
-            `\n MongoDB connected !! DB HOST: ${connectionInstance.connection.host}`
-        );
-    } catch (error) {
-        console.error("ERROR: ", error);
-        process.exit(1);
-    }
+// Custom method to check if the password is correct
+userSchema.methods.isPasswordCorrect = async function (password) {
+    return await bcrypt.compare(password, this.password);
 };
 
-export default connectDB;
+// Custom method to generate a short-lived access token
+userSchema.methods.generateAccessToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+            email: this.email,
+            username: this.username,
+            fullName: this.fullName,
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        {
+            expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
+        }
+    );
+};
+
+// Custom method to generate a long-lived refresh token
+userSchema.methods.generateRefreshToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        {
+            expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+        }
+    );
+};
+
+export const User = mongoose.model("User", userSchema);
 ```
 
-  * **`async/await`**: The connection logic is wrapped in an `async` function to handle the asynchronous nature of a network request.
-  * **`try/catch`**: This block provides robust error handling. If the connection fails for any reason, the `catch` block is executed.
-  * **`process.exit(1)`**: This is a deliberate "fail-fast" approach. If the application cannot connect to its database at startup, it cannot function. This command immediately terminates the application, preventing it from running in a broken state.
+### **`video.model.js`**
+
+```javascript
+import mongoose, { Schema } from "mongoose";
+import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
+
+const videoSchema = new Schema(
+    {
+        videoFile: {
+            type: String, // Cloudinary URL
+            required: true,
+        },
+        thumbnail: {
+            type: String, // Cloudinary URL
+            required: true,
+        },
+        title: {
+            type: String,
+            required: true,
+        },
+        description: {
+            type: String,
+            required: true,
+        },
+        duration: {
+            type: Number,
+            required: true,
+        },
+        views: {
+            type: Number,
+            default: 0,
+        },
+        isPublished: {
+            type: Boolean,
+            default: true,
+        },
+        owner: {
+            type: Schema.Types.ObjectId,
+            ref: "User",
+        },
+    },
+    {
+        timestamps: true,
+    }
+);
+
+// Apply the plugin for aggregation and pagination
+videoSchema.plugin(mongooseAggregatePaginate);
+
+export const Video = mongoose.model("Video", videoSchema);
+```
