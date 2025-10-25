@@ -1,7 +1,5 @@
 # Basic Node.js Backend Setup
 
-This guide provides a step-by-step walkthrough for setting up a foundational Node.js backend application. It covers project initialization, professional file structure, and running your first script.
-
 ## Core Concepts
 
 ![alt text](assets/image.png)
