@@ -1,20 +1,6 @@
-const express = require("express");
+const app = require("./src/app");
 
-// express() // server created
-
-const app1 = express(); // creating server instance (app is an object) server created
-const app2 = express(); // creating server instance (app is an object) server created
-// console.log(app);
-
-app1.get("/", (req, res) => {
-    res.send("Hello World");
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
-
-app2.get("/", (req, res) => {
-    res.send("About");
-});
-
-app1.listen(3000); // server started
-app1.listen(4050); // server started
-// app2.listen(3000); // error
-app2.listen(3001); // server started
