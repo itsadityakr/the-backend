@@ -1,51 +1,26 @@
-// create server
-
 const express = require("express");
+const noteModel = require("./models/note.model");
 
 const app = express();
 
 app.use(express.json());
 
-const notes = [];
-
-app.post("/notes", (req, res) => {
-    console.log("Note received", req.body);
-    notes.push(req.body);
-    res.status(201).json({
-        message: "Note received",
+app.post("/notes", async (req, res) => {
+    const data = req.body;
+    await noteModel.create({
+        title: data.title,
+        description: data.description,
     });
+    res.status(201).json({ message: "Note created successfully" });
 });
 
-app.get("/notes", (req, res) => {
+app.get("/notes", async (req, res) => {
+    const notes = await noteModel.find();
     res.status(200).json({
-        message: "Notes Fetched Successfully",
-        notes: notes,
+        message: "Notes fetched successfully",
+        data: notes,
     });
-});
-
-app.delete("/notes/:index", (req, res) => {
-    const index = req.params.index;
-    console.log("Index", index);
-
-    delete notes[index];
-
-    res.status(200).json({
-        message: "Notes Deleted Successfully",
-        notes: notes,
-    });
-});
-
-app.patch("/notes/:index", (req, res) => {
-    const index = req.params.index;
-    console.log("Index", index);
-
-    // notes[index].title = req.body.title;
-    notes[index].description = req.body.description;
-
-    res.status(200).json({
-        message: "Notes Updated Successfully",
-        notes: notes,
-    });
+    res.send(notes);
 });
 
 module.exports = app;
