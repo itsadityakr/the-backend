@@ -1,26 +1,32 @@
 const express = require("express");
-const noteModel = require("./models/note.model");
+require("dotenv").config();
 
 const app = express();
+const multer = require("multer");
+const uploadFile = require("./services/storage.services");
+const postModel = require("./models/post.model");
 
 app.use(express.json());
+const upload = multer({ storage: multer.memoryStorage() });
 
-app.post("/notes", async (req, res) => {
-    const data = req.body;
-    await noteModel.create({
-        title: data.title,
-        description: data.description,
+app.post("/create-post", upload.single("image"), async (req, res) => {
+    const result = await uploadFile(req.file.buffer);
+
+    const post = await postModel.create({
+        image: result.url,
+        caption: req.body.caption,
     });
-    res.status(201).json({ message: "Note created successfully" });
+
+    res.status(201).json({ message: "Post created successfully", post });
 });
 
-app.get("/notes", async (req, res) => {
-    const notes = await noteModel.find();
+app.get("/post", async (req, res) => {
+    const post = await postModel.find();
+
     res.status(200).json({
-        message: "Notes fetched successfully",
-        data: notes,
+        message: "Post fetched successfully",
+        post,
     });
-    res.send(notes);
 });
 
 module.exports = app;
