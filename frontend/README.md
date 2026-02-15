@@ -20,12 +20,29 @@ frontend/
     ├── index.css             ← Global styles for the entire app
     │
     ├── config/               ← Configuration files
-    │   └── api.js            ← Centralized HTTP client (Axios) setup
+    │   └── api.js            ← API helper functions (apiGet, apiPost)
     │
     └── pages/                ← Page components (one per URL/route)
         ├── CreatePost.jsx    ← Form for creating new posts
         └── Feed.jsx          ← Displays all posts from the API
 ```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Create a .env file (copy the example)
+cp .env.example .env
+
+# 3. Start the dev server
+npm run dev
+```
+
+Then open `http://localhost:5173` in your browser.
 
 ---
 
@@ -75,7 +92,7 @@ frontend/
 
 ---
 
-## ️ Environment Variables
+## ️Environment Variables
 
 ### .env.example:
 
@@ -113,7 +130,7 @@ React apps are **Single Page Applications (SPA)**. There is only ONE HTML file. 
 <meta charset="UTF-8" />
 ```
 
-- **What:** Sets the character encoding to UTF-8 (supports all languages, symbols, and emoji ).
+- **What:** Sets the character encoding to UTF-8 (supports all languages, symbols, and emoji).
 
 ```html
 <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -324,6 +341,14 @@ const App = () => {
 
 - **What:** When the URL is `/feed`, render the `Feed` component.
 
+**URL → Component mapping:**
+
+| URL            | What shows up         |
+| -------------- | --------------------- |
+| `/`            | Redirects to `/feed`  |
+| `/feed`        | Feed page (all posts) |
+| `/create-post` | Create post form      |
+
 ```js
 export default App;
 ```
@@ -333,9 +358,9 @@ export default App;
 
 ---
 
-### 5. `src/config/api.js` — Centralized HTTP Client
+### 5. `src/config/api.js` — API Helper Functions
 
-Instead of writing `axios.get("http://localhost:3000/api/post")` in every component, we create a pre-configured instance.
+Instead of writing `axios.get("http://localhost:3000/api/post")` in every component, we create a pre-configured instance with simple helper functions.
 
 ```js
 import axios from "axios";
@@ -345,7 +370,6 @@ import axios from "axios";
 - **Axios vs fetch():** Both make HTTP requests. Axios advantages:
     - Automatically parses JSON responses (no `.json()` call needed)
     - Better error handling (non-2xx responses are treated as errors)
-    - Supports interceptors (functions that run on every request/response)
     - Works the same in the browser and Node.js
 
 ```js
@@ -360,29 +384,38 @@ const api = axios.create({
 - **`|| "http://localhost:3000/api"`** — Fallback if the env var isn't set.
 
 ```js
-api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        console.error(
-            "API Error:",
-            error.response?.data?.message || error.message,
-        );
-        return Promise.reject(error);
-    },
-);
+export async function apiGet(url) {
+    const response = await api.get(url);
+    return response;
+}
 ```
 
-- **What:** An interceptor — a function that runs on every API response.
-- **First function `(response) => response`** — For successful responses, just pass them through unchanged.
-- **Second function `(error) => { ... }`** — For errors, log the error message and then re-throw it so the calling component can handle it too.
-- **`error.response?.data?.message`** — Tries to get the error message from the backend's JSON response. The `?.` (optional chaining) prevents crashes if `response` or `data` is undefined.
-- **`Promise.reject(error)`** — Re-throws the error so the component's `catch` block still catches it.
+- **What:** A simple helper function that makes a GET request.
+- **`export`** — Makes this function importable by other files. Other files can do `import { apiGet } from "../config/api"`.
+- **`async function`** — The function is asynchronous (it uses `await` inside).
+- **`await api.get(url)`** — `await` pauses execution until the API responds. Without `await`, `response` would be a Promise object instead of the actual data.
+- **`return response`** — Returns the full response. The calling code can access `response.data` to get the JSON body.
+- **How it's used:** `const res = await apiGet("/post")` → makes a GET request to `http://localhost:3000/api/post`
+
+```js
+export async function apiPost(url, data) {
+    const response = await api.post(url, data);
+    return response;
+}
+```
+
+- **What:** Same idea but for POST requests (sending data to the server).
+- **`data`** — The data to send in the request body (can be JSON, FormData, etc.).
+- **How it's used:** `await apiPost("/create-post", formData)` → sends the form data to the backend
 
 ```js
 export default api;
 ```
 
-- **What:** Exports the configured instance so all components use the same settings.
+- **What:** Also exports the raw `api` instance as the default export, in case you need it directly.
+- **Named vs Default exports:** A file can have ONE default export and MANY named exports.
+    - `import api from "../config/api"` → gets the default (the raw axios instance)
+    - `import { apiGet, apiPost } from "../config/api"` → gets the named exports (helpers)
 
 ---
 
@@ -406,10 +439,10 @@ import { useNavigate } from "react-router-dom";
 - **`useNavigate`** — A React Router hook that gives you a function to navigate programmatically. Instead of the user clicking a link, your code can redirect them.
 
 ```js
-import api from "../config/api";
+import { apiPost } from "../config/api";
 ```
 
-- **What:** Our pre-configured Axios instance.
+- **What:** Our simple helper function to send POST requests.
 
 ```js
 const CreatePost = () => {
@@ -426,12 +459,6 @@ const [loading, setLoading] = useState(false);
     1. `loading` — The current value of the state (starts as `false`)
     2. `setLoading` — A function to UPDATE the value
 - **Why not just `let loading = false`?** Regular variables don't trigger re-renders. When you call `setLoading(true)`, React knows the state changed and re-renders the component to show the updated UI (like disabling the button).
-
-```js
-const [error, setError] = useState("");
-```
-
-- **What:** Error message state. Empty string means no error.
 
 ```js
 const navigate = useNavigate();
@@ -455,12 +482,6 @@ e.preventDefault();
 - **Default behavior:** When an HTML form is submitted, the browser reloads the entire page and sends the data to the server. In React, we handle submission ourselves with JavaScript — we DON'T want a page reload (it would destroy our React app's state).
 
 ```js
-setError("");
-```
-
-- **What:** Clears any previous error message.
-
-```js
 const formData = new FormData(e.target);
 ```
 
@@ -470,66 +491,17 @@ const formData = new FormData(e.target);
 - **Why FormData?** For file uploads, you need to send data as `multipart/form-data` format. FormData handles this automatically.
 
 ```js
-        const imageFile = formData.get("image");
-        if (!imageFile || imageFile.size === 0) {
-```
-
-- **`formData.get("image")`** — Gets the value of the form field named "image" (the file input).
-- **`imageFile.size === 0`** — If no file was selected, the size is 0.
-- **Why validate here (client-side)?** To give instant feedback without waiting for a server round-trip. The server also validates (defense in depth).
-
-```js
-        const caption = formData.get("caption");
-        if (!caption || !caption.trim()) {
-```
-
-- **What:** Gets and validates the caption text. Rejects empty or whitespace-only captions.
-
-```js
-        try {
-            setLoading(true);
-```
-
-- **What:** Shows the loading state (disables button, shows "Posting..." text).
-
-```js
-await api.post("/create-post", formData);
-```
-
-- **`api.post(url, data)`** — Sends an HTTP POST request.
-- **`"/create-post"`** — The endpoint path. Combined with the base URL: `http://localhost:3000/api/create-post`.
-- **`formData`** — The form data (image file + caption). Axios automatically sets the `Content-Type` header to `multipart/form-data` when you pass a FormData object.
-
-```js
+setLoading(true);
+await apiPost("/create-post", formData);
+setLoading(false);
 navigate("/feed");
 ```
 
-- **What:** After successful post creation, redirect the user to the feed page.
-
-```js
-        } catch (err) {
-            setError(
-                err.response?.data?.message ||
-                    "Something went wrong. Please try again."
-            );
-```
-
-- **`err.response?.data?.message`** — Try to get the error message from the backend's response.
-- **`?.`** (Optional chaining) — If `err.response` is undefined, return `undefined` instead of throwing a "Cannot read property of undefined" error.
-    - Without `?.`: `err.response.data.message` → crashes if `err.response` is undefined!
-    - With `?.`: `err.response?.data?.message` → returns `undefined` safely
-- **`||`** — If the backend message is undefined, use the fallback message.
-
-```js
-        } finally {
-            setLoading(false);
-        }
-```
-
-- **`finally`** — Runs regardless of whether `try` succeeded or `catch` caught an error.
-- **Why here?** We ALWAYS want to re-enable the button:
-    - If success: user navigates away (but good practice)
-    - If error: user needs the button enabled to try again
+- **Step by step:**
+    1. `setLoading(true)` — Show the loading state (disables button, shows "Posting..." text)
+    2. `await apiPost(...)` — Send the form data to the backend. `await` pauses here until the server responds.
+    3. `setLoading(false)` — Re-enable the button
+    4. `navigate("/feed")` — Redirect the user to the feed page
 
 ```js
     return (
@@ -538,16 +510,6 @@ navigate("/feed");
 
 - **`return (...)`** — Returns JSX (what the component renders on screen).
 - **`className`** — In JSX, you use `className` instead of HTML's `class` because `class` is a reserved keyword in JavaScript.
-
-```js
-{
-    error && <p className="error-message">{error}</p>;
-}
-```
-
-- **What:** Conditional rendering using the `&&` (AND) operator.
-- **How it works:** If `error` is truthy (not empty string), render the `<p>`. If falsy (empty string), render nothing.
-- **Pattern:** `{condition && <element>}` — show element only when condition is true.
 
 ```js
                 <form className="post-form" onSubmit={handleSubmit}>
@@ -592,6 +554,20 @@ navigate("/feed");
 - **`disabled={loading}`** — When `loading` is true, the button is disabled (can't be clicked). Prevents double-submissions.
 - **`{loading ? "Posting..." : "Post to Feed"}`** — Changes button text based on loading state.
 
+```js
+export default CreatePost;
+```
+
+- **What:** Exports the component so `App.jsx` can import and use it.
+
+**The complete flow:**
+
+1. User fills in the form (picks an image + writes a caption)
+2. User clicks "Post to Feed"
+3. `handleSubmit` runs → collects form data → sends it via `apiPost()`
+4. While sending → button shows "Posting..." and is disabled
+5. After server responds → redirects to `/feed`
+
 ---
 
 ### 7. `src/pages/Feed.jsx` — Feed Page
@@ -609,6 +585,12 @@ import { useState, useEffect } from "react";
     - Directly modifying the DOM
 
 ```js
+import { apiGet } from "../config/api";
+```
+
+- **What:** Our simple helper function to send GET requests.
+
+```js
 const [posts, setPosts] = useState([]);
 ```
 
@@ -622,10 +604,15 @@ const [loading, setLoading] = useState(true);
 - **What:** Loading state. Starts as `true` because we fetch data immediately when the page loads.
 
 ```js
-    useEffect(() => {
-        const fetchPosts = async () => { ... };
-        fetchPosts();
-    }, []);
+useEffect(() => {
+    const fetchPosts = async () => {
+        const res = await apiGet("/post");
+        setPosts(res.data.posts);
+        setLoading(false);
+    };
+
+    fetchPosts();
+}, []);
 ```
 
 - **How useEffect works:** `useEffect(callback, dependencies)`
@@ -635,16 +622,11 @@ const [loading, setLoading] = useState(true);
         - **`[value]`** — Run every time `value` changes.
         - **No array at all** — Run after every single render (usually a mistake — causes infinite loops!).
 - **Why define function inside?** You can't make useEffect's callback directly `async`. So you define a separate `async` function inside and call it immediately.
-
-```js
-const res = await api.get("/post");
-setPosts(res.data.posts);
-```
-
-- **`api.get("/post")`** — Sends GET to `http://localhost:3000/api/post`.
+- **`await apiGet("/post")`** — Sends GET to `http://localhost:3000/api/post`.
 - **`res.data`** — Axios puts the response body in `.data`. Our backend sends: `{ success: true, posts: [...], count: N }`.
 - **`res.data.posts`** — The array of post objects.
 - **`setPosts(res.data.posts)`** — Updates the state. React re-renders the component with the new posts data.
+- **`setLoading(false)`** — Hides the spinner and shows the actual content.
 
 ```js
 if (loading) {
@@ -661,18 +643,6 @@ if (loading) {
 
 - **What:** "Early return" pattern. If we're still loading, return the loading UI and stop. The rest of the component doesn't render.
 - **CSS handles the animation:** The `.loading-spinner` class uses `@keyframes spin` CSS animation.
-
-```js
-    if (error) {
-        return (
-            ...
-            <button className="submit-btn" onClick={() => window.location.reload()}>
-                Try Again
-            </button>
-```
-
-- **What:** Error state with a retry button.
-- **`window.location.reload()`** — Reloads the entire page (a simple way to retry the data fetch).
 
 ```js
 {
@@ -698,15 +668,35 @@ if (loading) {
 - **`<img src={post.image} ... />`** — Displays the image from the ImageKit CDN URL.
 - **`alt={post.caption}`** — Alternative text shown if the image fails to load, and read by screen readers for accessibility.
 
+```js
+export default Feed;
+```
+
+- **What:** Exports the component so `App.jsx` can import and use it.
+
+**The complete flow:**
+
+1. Page loads → `useEffect` runs → calls `apiGet("/post")`
+2. While loading → shows a spinning animation
+3. Once data arrives → updates `posts` state → React re-renders
+4. If posts exist → shows cards with image + caption
+5. If no posts exist → shows "No posts yet!" message
+
 ---
 
 ### 8. `src/index.css` — Global Styles
+
+This file contains ALL the CSS for the entire app. Every class used in JSX is defined here.
 
 ```css
 @import "tailwindcss";
 ```
 
 - **What:** Imports Tailwind CSS base styles and utilities.
+
+---
+
+#### Global / Reset Styles
 
 ```css
 * {
@@ -730,21 +720,43 @@ body,
 
 ```css
 body {
+    margin: 0;
+    font-family:
+        "Inter",
+        system-ui,
+        -apple-system,
+        sans-serif;
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    color: #333;
+}
 ```
 
-- **`linear-gradient(angle, color1, color2)`** — Creates a smooth transition between colors.
+- **`margin: 0`** — Removes the default body margin (browsers add ~8px margin by default).
+- **`font-family`** — A font stack. The browser tries each font in order:
+    1. `"Inter"` — A modern, clean font (if the user has it installed or loaded)
+    2. `system-ui` — The operating system's default UI font
+    3. `-apple-system` — Apple's San Francisco font (macOS/iOS)
+    4. `sans-serif` — Final fallback
+- **`linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)`** — A smooth diagonal gradient from light gray to light blue.
     - `135deg` — Diagonal direction (top-left to bottom-right)
     - `#f5f7fa` — Light gray (at position 0%, the start)
     - `#c3cfe2` — Light blue (at position 100%, the end)
 
+---
+
+#### CreatePost Page Styles
+
 ```css
 .create-post-container {
+    min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 20px;
+}
 ```
 
+- **`min-height: 100vh`** — At least 100% of the viewport height (the full screen).
 - **Flexbox centering pattern** — The most common CSS pattern to center content:
     - `display: flex` — Turns the container into a flex container
     - `align-items: center` — Centers children vertically
@@ -752,14 +764,67 @@ body {
 
 ```css
 .form-card {
+    background: white;
+    width: 100%;
+    max-width: 400px;
+    padding: 2rem;
+    border-radius: 20px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
 ```
 
+- **`max-width: 400px`** — Card won't grow wider than 400px, but can shrink on small screens.
+- **`border-radius: 20px`** — Rounded corners.
 - **`box-shadow: X Y blur color`** — Adds a shadow to the element.
     - `0` — X offset (0 = centered horizontally)
     - `10px` — Y offset (10px below the element)
     - `25px` — Blur radius (higher = softer shadow)
     - `rgba(0, 0, 0, 0.1)` — Black color at 10% opacity (very subtle)
+
+```css
+.form-title {
+    text-align: center;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: #1a1a1a;
+}
+```
+
+- **`rem`** — A relative unit. `1rem` = the root element's font size (usually 16px). So `1.5rem` = 24px.
+
+```css
+.form-group {
+    margin-bottom: 1.2rem;
+}
+```
+
+- **What:** Adds spacing between form fields.
+
+```css
+.form-label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #555;
+}
+```
+
+- **`display: block`** — Makes the label take the full width (each label on its own line).
+- **`font-weight: 600`** — Semi-bold text (400 is normal, 700 is bold).
+
+```css
+.input-field {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #eee;
+    border-radius: 10px;
+    box-sizing: border-box;
+    transition: all 0.3s ease;
+}
+```
+
+- **`transition: all 0.3s ease`** — Smoothly animates any property change over 0.3 seconds. When the border color changes on focus, it fades instead of snapping.
 
 ```css
 .input-field:focus {
@@ -775,46 +840,165 @@ body {
 
 ```css
 .submit-btn {
+    width: 100%;
+    background: #4a90e2;
+    color: white;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
     transition:
         transform 0.2s,
         background 0.3s;
 }
 ```
 
-- **`transition`** — Smoothly animates changes to the specified properties. When the background color changes (on hover), it transitions over 0.3 seconds instead of instantly snapping.
+- **`cursor: pointer`** — Shows the hand cursor on hover (indicates the element is clickable).
+- **`transition`** — Smoothly animates transform (scale) and background color changes.
 
 ```css
-.post-card {
-    overflow: hidden;
+.submit-btn:hover {
+    background: #357abd;
 }
 ```
 
-- **What:** Clips any content that extends beyond the card's boundaries.
-- **Why?** Without this, the image would stick out past the card's rounded corners.
+- **`:hover`** — Applies when the mouse is over the button. Darkens the blue.
+
+```css
+.submit-btn:active {
+    transform: scale(0.98);
+}
+```
+
+- **`:active`** — Applies while the button is being clicked/pressed. Shrinks it slightly for a "press" effect.
+
+```css
+.submit-btn.disabled,
+.submit-btn:disabled {
+    background: #a0c4e8;
+    cursor: not-allowed;
+    transform: none;
+    opacity: 0.7;
+}
+```
+
+- **What:** Grayed-out style when the button is disabled (while submitting).
+- **`.submit-btn.disabled`** — When both classes are on the same element.
+- **`:disabled`** — When the HTML `disabled` attribute is set.
+
+---
+
+#### Feed Page Styles
+
+```css
+.feed-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    gap: 30px;
+}
+```
+
+- **`flex-direction: column`** — Stack children vertically (default is horizontal/row).
+- **`gap: 30px`** — Space between each child element. A modern alternative to adding margin to each card.
+
+```css
+.post-card {
+    background: white;
+    border-radius: 15px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+```
+
+- **`overflow: hidden`** — Clips any content that extends beyond the card's boundaries. Without this, the image would stick out past the card's rounded corners.
 
 ```css
 .post-card:hover {
     transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
 }
 ```
 
-- **What:** When the user hovers over a post card, it moves up by 2 pixels, creating a "lift" effect.
+- **`translateY(-2px)`** — Moves the card 2px UP on hover, creating a "lift" effect.
+- **Bigger shadow on hover** — Combined with the lift, creates a 3D "floating" effect.
+
+```css
+.post-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+```
+
+- **`width: 100%`** — Image fills the card width.
+- **`height: auto`** — Maintains aspect ratio.
+- **`display: block`** — Removes the tiny gap that appears below inline images.
+
+```css
+.post-card p {
+    padding: 15px 20px;
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #444;
+}
+```
+
+- **`line-height: 1.5`** — Space between lines of text. `1.5` means 1.5× the font size.
+
+```css
+.empty-state {
+    text-align: center;
+    color: #888;
+    margin-top: 50px;
+}
+```
+
+- **What:** Centered text shown when no posts exist yet.
+
+---
+
+#### Loading Spinner Styles
+
+```css
+.loading-container {
+    text-align: center;
+    margin-top: 80px;
+}
+```
+
+- **What:** Centers the spinner and push it down from the top.
 
 ```css
 .loading-spinner {
+    width: 40px;
+    height: 40px;
     border: 4px solid #e5e7eb;
     border-top: 4px solid #4a90e2;
     border-radius: 50%;
+    margin: 0 auto 16px;
     animation: spin 0.8s linear infinite;
 }
 ```
 
 - **How the spinner works:**
-    1. A circle is created with `border-radius: 50%`
-    2. The border is light gray on all sides
-    3. The TOP border is overridden to blue
-    4. CSS animation rotates it 360 degrees continuously
-    5. Result: a circle with one blue section spinning around!
+    - It's a `40×40px` circle (`border-radius: 50%` makes it round).
+    - All 4 borders are light gray (`#e5e7eb`).
+    - The TOP border is overridden to blue (`#4a90e2`) — this creates the "partial circle" look.
+    - `animation: spin 0.8s linear infinite` — Rotates it continuously.
+        - `spin` — Name of the keyframes animation (defined below).
+        - `0.8s` — One full rotation takes 0.8 seconds.
+        - `linear` — Constant speed (no easing).
+        - `infinite` — Never stops.
 
 ```css
 @keyframes spin {
@@ -827,113 +1011,61 @@ body {
 }
 ```
 
-- **`@keyframes`** — Defines an animation sequence.
-- **`from`** — Starting state (0° rotation).
-- **`to`** — Ending state (360° rotation = full circle).
-- **`linear`** — Constant speed throughout (no acceleration/deceleration).
-- **`infinite`** — Repeat forever.
+- **`@keyframes`** — Defines a CSS animation.
+- **`from` → `to`** — Start state and end state. Rotates from 0° to 360° (one full turn).
+
+```css
+.loading-text {
+    color: #888;
+    font-size: 1rem;
+}
+```
+
+- **What:** Gray text saying "Loading posts..." below the spinner.
 
 ---
 
-## Data Flow Diagrams
-
-### Creating a Post
+## How the App Works (The Big Picture)
 
 ```
-User fills form → clicks "Post to Feed"
-       │
-       ▼
-handleSubmit(e) runs
-       │
-       ├─ e.preventDefault() — stop page reload
-       ├─ setError("") — clear old errors
-       ├─ new FormData(e.target) — collect form values
-       │
-       ├─ Validate: image file exists?
-       │      NO → setError("Please select an image") → STOP
-       │
-       ├─ Validate: caption not empty?
-       │      NO → setError("Please enter a caption") → STOP
-       │
-       ├─ setLoading(true) — disable button, show "Posting..."
-       │
-       ├─ api.post("/create-post", formData) — send to backend
-       │
-       ├─ SUCCESS → navigate("/feed") → user sees their post!
-       │
-       └─ ERROR → setError(error message) → red error box appears
-       │
-       └─ FINALLY → setLoading(false) — re-enable button
-```
-
-### Loading the Feed
-
-```
-Component mounts (page loads)
-       │
-       ▼
-useEffect runs (only once, because of [])
-       │
-       ├─ setLoading(true) → spinner appears
-       ├─ setError("") → clear old errors
-       │
-       ├─ api.get("/post") → fetch from backend
-       │
-       ├─ SUCCESS → setPosts(data) → posts appear as cards
-       │
-       ├─ ERROR → setError(message) → error + retry button shown
-       │
-       └─ FINALLY → setLoading(false) → spinner disappears
+User opens http://localhost:5173/
+        │
+        ▼
+   index.html loads
+        │
+        ▼
+   main.jsx runs
+        │
+        ▼
+   <App /> renders
+        │
+        ▼
+   Router checks URL
+        │
+    ┌───┴───────────────┐
+    │                   │
+ URL is /feed     URL is /create-post
+    │                   │
+    ▼                   ▼
+ <Feed />         <CreatePost />
+    │                   │
+    ▼                   ▼
+ apiGet("/post")   User fills form
+    │                   │
+    ▼                   ▼
+ Shows posts       apiPost("/create-post", data)
+                        │
+                        ▼
+                   Redirects to /feed
 ```
 
 ---
 
-## Key Concepts for Beginners
+## npm Scripts
 
-### What is React?
-
-React is a JavaScript library for building user interfaces. Instead of manipulating HTML directly with `document.getElementById()` and `.innerHTML`, you describe what the UI should look like using components and JSX. React then efficiently updates the real DOM when data changes.
-
-### What is JSX?
-
-JSX is a syntax extension that lets you write HTML-like code inside JavaScript files. It looks like HTML but it's actually JavaScript. Vite/Babel compiles `<div className="card">Hello</div>` into `React.createElement("div", {className: "card"}, "Hello")`.
-
-### What is a Component?
-
-A reusable piece of UI defined as a function that returns JSX. Components can:
-
-- Accept data via **props** (like function parameters)
-- Manage their own **state** (changing data)
-- Render other components (nesting)
-
-### What is State?
-
-Data owned by a component that can change over time. When state changes, React automatically re-renders the component. Created with `useState()`. Unlike regular variables, updating state triggers a UI update.
-
-### What is a Hook?
-
-A special function starting with `use` that lets you access React features:
-
-- `useState` — Add state to a component
-- `useEffect` — Run code when component loads or state changes
-- `useNavigate` — Navigate to different pages programmatically
-
-### What is the Virtual DOM?
-
-React doesn't update the real DOM directly (that's slow). Instead, it maintains a "virtual" copy of the DOM in memory. When state changes, React:
-
-1. Creates a new virtual DOM
-2. Compares it with the previous virtual DOM (called "diffing")
-3. Updates ONLY the changed parts of the real DOM
-
-This makes React fast — it minimizes expensive DOM operations.
-
-### What are Props?
-
-Props (short for "properties") are how you pass data from a parent component to a child component. They're like function arguments — read-only and flow downward.
-
-### What is `import` vs `require()`?
-
-- **`import`** — ES Module syntax (modern JavaScript). Used in the frontend because Vite and browsers support it.
-- **`require()`** — CommonJS syntax (traditional Node.js). Used in the backend.
-- They do the same thing (load code from another file) but have different syntax.
+| Command           | What it does                            |
+| ----------------- | --------------------------------------- |
+| `npm run dev`     | Starts the dev server with hot reload   |
+| `npm run build`   | Builds for production (creates `dist/`) |
+| `npm run preview` | Preview the production build locally    |
+| `npm run lint`    | Check code for errors and style issues  |

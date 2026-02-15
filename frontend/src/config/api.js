@@ -1,22 +1,31 @@
-// api.js — Centralized Axios instance with base URL and error logging
+// api.js — Simple helper functions for making API calls
 
 import axios from "axios"; // HTTP request library
 
-// Create Axios instance with base URL from env (or default to localhost)
+// Create an Axios instance with the backend URL already set
+// This way, we don't have to type the full URL every time
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000/api",
 });
 
-// Log API errors automatically for debugging
-api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        console.error(
-            "API Error:",
-            error.response?.data?.message || error.message,
-        );
-        return Promise.reject(error);
-    },
-);
+// ---- Simple Helper Functions ----
+
+/**
+ * Makes a GET request to the given URL path.
+ * Example: const data = await apiGet("/post")  →  GET http://localhost:3000/api/post
+ */
+export async function apiGet(url) {
+    const response = await api.get(url);
+    return response;
+}
+
+/**
+ * Makes a POST request to the given URL path with some data.
+ * Example: await apiPost("/create-post", formData)  →  POST http://localhost:3000/api/create-post
+ */
+export async function apiPost(url, data) {
+    const response = await api.post(url, data);
+    return response;
+}
 
 export default api;
