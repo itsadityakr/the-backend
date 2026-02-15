@@ -1,1124 +1,842 @@
-# The Backend
+# ️ Backend — Express.js API Server (Detailed Documentation)
 
-A RESTful API built with **Express.js**, **MongoDB**, and **ImageKit** for creating and fetching posts with image uploads.
-
----
-
-## Table of Contents
-
-- [Tech Stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Running the Server](#running-the-server)
-- [API Endpoints](#api-endpoints)
-    - [POST /create-post](#post-create-post)
-    - [GET /post](#get-post)
-- [Project Structure](#project-structure)
-- [Folder Explanations](#folder-explanations)
-- [Code Walkthrough — File by File](#code-walkthrough--file-by-file)
-    - [package.json](#1-packagejson--project-configuration)
-    - [.env / .env.example](#2-env--environment-variables)
-    - [server.js](#3-serverjs--entry-point)
-    - [src/app.js](#4-srcappjs--express-application-setup)
-    - [src/config/db.js](#5-srcconfigdbjs--database-connection)
-    - [src/models/post.model.js](#6-srcmodelspostmodeljs--data-schema)
-    - [src/services/storage.service.js](#7-srcservicesstorageservicejs--imagekit-upload)
-    - [src/middlewares/upload.middleware.js](#8-srcmiddlewaresuploadmiddlewarejs--file-upload-handler)
-    - [src/routes/post.routes.js](#9-srcroutespostroutesjs--route-definitions)
-    - [src/controllers/post.controller.js](#10-srccontrollerspostcontrollerjs--request-handlers)
-- [How a Request Flows Through the App](#how-a-request-flows-through-the-app)
-- [Key Concepts for Beginners](#key-concepts-for-beginners)
-- [How to Add a New Feature](#how-to-add-a-new-feature)
+This document explains **every single file, every line of code, every import, and every concept** in the backend. If you're an absolute beginner, read through this from top to bottom.
 
 ---
 
-## Tech Stack
-
-| Technology     | What It Is                                                                          | Why We Use It                                                             |
-| -------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **Node.js**    | A JavaScript runtime that lets you run JavaScript outside the browser, on a server. | Powers our backend server.                                                |
-| **Express.js** | A minimal web framework for Node.js that handles HTTP requests and routing.         | Makes it easy to create API endpoints (URLs that respond to requests).    |
-| **MongoDB**    | A NoSQL database that stores data as JSON-like documents (not tables like SQL).     | Stores our posts (image URLs and captions).                               |
-| **Mongoose**   | An ODM (Object Data Modeling) library — gives MongoDB a structured schema system.   | Lets us define what a "Post" looks like and validate data before saving.  |
-| **ImageKit**   | A cloud image storage and CDN service — stores images and serves them fast.         | We upload images here instead of storing them on our own server.          |
-| **Multer**     | Express middleware that handles `multipart/form-data` (file uploads).               | Reads uploaded files from HTTP requests and makes them available in code. |
-| **dotenv**     | Loads environment variables from a `.env` file into `process.env`.                  | Keeps secrets (database passwords, API keys) out of your code.            |
-| **nodemon**    | A dev tool that auto-restarts the server whenever you save a file.                  | Speeds up development — no need to manually restart after every change.   |
-
----
-
-## Prerequisites
-
-Before you start, make sure you have:
-
-1. **Node.js** (v18 or later) — [Download here](https://nodejs.org/)
-    - Node.js lets you run JavaScript on your computer (outside a browser).
-    - Comes with **npm** (Node Package Manager) which installs libraries.
-
-2. **MongoDB Database** — Either:
-    - A free cloud database on [MongoDB Atlas](https://www.mongodb.com/atlas) (recommended for beginners), OR
-    - MongoDB installed locally on your machine.
-
-3. **ImageKit Account** — [Sign up free](https://imagekit.io/)
-    - You'll need the **Private Key** from your ImageKit dashboard.
-
----
-
-## Installation
-
-```bash
-# 1. Clone the repository (download the code)
-git clone https://github.com/itsadityakr/the-backend.git
-
-# 2. Navigate into the backend folder
-cd the-backend/backend
-
-# 3. Install all dependencies (libraries this project uses)
-#    This reads package.json and downloads everything listed in "dependencies"
-npm install
-```
-
-**What `npm install` does:**
-
-- Reads the `package.json` file
-- Downloads all the packages listed under `"dependencies"` and `"devDependencies"`
-- Puts them in a `node_modules/` folder
-- Creates/updates `package-lock.json` (locks exact versions)
-
----
-
-## Configuration
-
-### Step 1: Create your `.env` file
-
-```bash
-# Copy the example file to create your own .env
-cp .env.example .env
-```
-
-### Step 2: Fill in your values
-
-Open `.env` and replace the placeholder values:
-
-```env
-PORT=3000
-MONGODB_URI=your_mongodb_connection_string
-IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key
-```
-
-| Variable               | What It Is                                                                                                                | Where to Get It                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `PORT`                 | The port number your server runs on. Default is `3000`, meaning the server is at `http://localhost:3000`.                 | You can choose any port (3000, 5000, 8080, etc.).                   |
-| `MONGODB_URI`          | The connection string for your MongoDB database. Looks like: `mongodb+srv://username:password@cluster.mongodb.net/dbname` | From MongoDB Atlas dashboard → Connect → Drivers → copy the string. |
-| `IMAGEKIT_PRIVATE_KEY` | Your secret ImageKit API key. Used to authenticate uploads. Looks like: `private_abc123xyz=`                              | From ImageKit dashboard → Developer Options → API Keys.             |
-
-> **⚠️ IMPORTANT:** Never commit your `.env` file to Git! It contains secrets. The `.gitignore` file already excludes it.
-
----
-
-## Running the Server
-
-```bash
-# Development mode — auto-restarts when you save changes (uses nodemon)
-npm run dev
-
-# Production mode — runs once, no auto-restart
-npm start
-```
-
-**Expected output:**
+## Backend Folder Structure
 
 ```
-Server is running on http://localhost:3000
-Database Connected
-```
-
-If you see `Database Connected`, your MongoDB connection is working. If you see an error instead, double-check your `MONGODB_URI` in `.env`.
-
----
-
-## API Endpoints
-
-This API has **2 endpoints** (URLs that accept requests):
-
----
-
-### POST /create-post
-
-**Purpose:** Upload an image and create a new post.
-
-**HTTP Method:** `POST`
-
-**URL:** `http://localhost:3000/create-post`
-
-**Request Format:** `multipart/form-data` (this is the format used for file uploads)
-
-**Request Fields:**
-
-| Field     | Type | Required | Description                               |
-| --------- | ---- | -------- | ----------------------------------------- |
-| `image`   | File | Yes      | The image file to upload (jpg, png, etc.) |
-| `caption` | Text | Yes      | A text description for the post           |
-
-**How to test with cURL:**
-
-```bash
-curl -X POST http://localhost:3000/create-post \
-  -F "image=@/path/to/your/photo.jpg" \
-  -F "caption=My first post!"
-```
-
-**How to test with Postman:**
-
-1. Set method to `POST` and URL to `http://localhost:3000/create-post`
-2. Go to `Body` tab → select `form-data`
-3. Add key `image` → change type dropdown to `File` → select an image file
-4. Add key `caption` → type `Text` → enter your caption text
-5. Click `Send`
-
-**✅ Success Response (Status 201 — Created):**
-
-```json
-{
-    "message": "Post created successfully",
-    "post": {
-        "_id": "65a1b2c3d4e5f6a7b8c9d0e1",
-        "image": "https://ik.imagekit.io/your_id/image.jpg",
-        "caption": "My first post!",
-        "__v": 0
-    }
-}
-```
-
-| Response Field | Type   | Description                                                       |
-| -------------- | ------ | ----------------------------------------------------------------- |
-| `message`      | String | A human-readable success message.                                 |
-| `post`         | Object | The newly created post document from MongoDB.                     |
-| `post._id`     | String | The unique ID MongoDB assigned to this post (auto-generated).     |
-| `post.image`   | String | The public URL of the uploaded image on ImageKit's CDN.           |
-| `post.caption` | String | The caption text you sent in the request.                         |
-| `post.__v`     | Number | Mongoose version key (tracks document revisions, auto-generated). |
-
-**❌ Error Response (Status 500 — Internal Server Error):**
-
-```json
-{
-    "message": "Error creating post",
-    "error": "Cannot read properties of undefined (reading 'buffer')"
-}
-```
-
-This happens when:
-
-- No image file was attached to the request
-- The `image` field name doesn't match what's expected
-- ImageKit API key is invalid
-- Database connection failed
-
----
-
-### GET /post
-
-**Purpose:** Fetch all posts from the database.
-
-**HTTP Method:** `GET`
-
-**URL:** `http://localhost:3000/post`
-
-**Request Fields:** None — just send the request.
-
-**How to test with cURL:**
-
-```bash
-curl http://localhost:3000/post
-```
-
-**How to test in a browser:**
-
-Just open `http://localhost:3000/post` in your browser — you'll see the JSON response directly.
-
-**✅ Success Response (Status 200 — OK):**
-
-```json
-{
-    "message": "Posts fetched successfully",
-    "posts": [
-        {
-            "_id": "65a1b2c3d4e5f6a7b8c9d0e1",
-            "image": "https://ik.imagekit.io/your_id/image.jpg",
-            "caption": "My first post!",
-            "__v": 0
-        },
-        {
-            "_id": "65a1b2c3d4e5f6a7b8c9d0e2",
-            "image": "https://ik.imagekit.io/your_id/image.jpg",
-            "caption": "Another post!",
-            "__v": 0
-        }
-    ]
-}
-```
-
-| Response Field    | Type   | Description                                                                                 |
-| ----------------- | ------ | ------------------------------------------------------------------------------------------- |
-| `message`         | String | A human-readable success message.                                                           |
-| `posts`           | Array  | An array containing all post objects from the database. Empty array `[]` if no posts exist. |
-| `posts[].image`   | String | The public URL of the image on ImageKit.                                                    |
-| `posts[].caption` | String | The text caption.                                                                           |
-
-**❌ Error Response (Status 500):**
-
-```json
-{
-    "message": "Error fetching posts",
-    "error": "connection timed out"
-}
-```
-
----
-
-## Project Structure
-
-```
-the-backend/
+backend/
+├── server.js                     ← ENTRY POINT — the first file that runs
+├── package.json                  ← Project metadata + dependencies list + npm scripts
+├── .env                          ← Secret environment variables (NOT committed to Git)
+├── .env.example                  ← Template showing what .env needs
 │
-├── backend/                            ← All backend code lives here
-│   ├── server.js                       ← 🚀 ENTRY POINT — starts the server
-│   ├── package.json                    ← 📦 Project config and dependency list
-│   ├── package-lock.json               ← 🔒 Locks exact dependency versions
-│   ├── .env                            ← 🔑 Secret environment variables (NOT committed)
-│   ├── .env.example                    ← 📋 Template showing required env vars (safe to commit)
-│   │
-│   └── src/                            ← 📁 ALL source code
-│       ├── app.js                      ← 🧠 Express app setup + middleware + route mounting
-│       │
-│       ├── config/                     ← ⚙️ Configuration files
-│       │   └── db.js                   ← Database connection setup
-│       │
-│       ├── routes/                     ← 🛤️ URL → function mapping
-│       │   └── post.routes.js          ← Defines /create-post and /post endpoints
-│       │
-│       ├── controllers/                ← 🎮 Business logic (what happens when URL is hit)
-│       │   └── post.controller.js      ← createPost() and getPosts() functions
-│       │
-│       ├── middlewares/                ← 🔧 Request preprocessors
-│       │   └── upload.middleware.js    ← Multer file upload config
-│       │
-│       ├── models/                     ← 📐 Data structure definitions
-│       │   └── post.model.js           ← Post schema (image + caption)
-│       │
-│       └── services/                   ← 🌐 External API integrations
-│           └── storage.service.js      ← ImageKit upload function
-│
-├── postman/                            ← Postman API test collections
-├── .gitignore                          ← Files/folders Git should ignore
-├── LICENSE                             ← Project license
-└── README.md                           ← This file
+└── src/                          ← All source code organized by responsibility
+    ├── app.js                    ← Express app setup — middleware, routes, error handling
+    │
+    ├── config/                   ← Configuration and settings
+    │   ├── constants.js          ← All hardcoded values in one place
+    │   └── db.js                 ← MongoDB connection logic
+    │
+    ├── controllers/              ← Business logic — what happens when API is called
+    │   └── post.controller.js    ← Create post + get posts logic
+    │
+    ├── middlewares/               ← Functions that run between request and response
+    │   ├── error.middleware.js   ← Global error handler catches all errors
+    │   └── upload.middleware.js  ← File upload configuration (Multer)
+    │
+    ├── models/                   ← Database structure definitions
+    │   └── post.model.js         ← Post schema — what a Post looks like in the DB
+    │
+    ├── routes/                   ← URL-to-function mappings
+    │   └── post.routes.js        ← Which URL triggers which controller
+    │
+    └── services/                 ← Third-party service integrations
+        └── storage.service.js    ← ImageKit upload logic
 ```
 
 ---
 
-## Folder Explanations
+## package.json — The Project's Identity Card
 
-### Why `backend/`?
-
-This is the container for all backend server code. In a larger project, you might also have a `frontend/` folder for the client-side app.
-
-### Why `src/`?
-
-Short for "source." It separates YOUR code from config files (`package.json`, `.env`, `.gitignore`). Everything you write goes here. Config files stay at the root level.
-
-### Why `config/`?
-
-**Config = Configuration.** Files that configure HOW your app connects to external things (databases, APIs). If someone asks "how does the app connect to MongoDB?", you look here. Not business logic, just setup.
-
-### Why `routes/`?
-
-**Routes = URL mappings.** A route says "when someone visits THIS URL with THIS method, run THIS function." It's like a phone directory — it maps numbers (URLs) to people (functions). You can see every endpoint your API has by looking in this folder.
-
-### Why `controllers/`?
-
-**Controllers = the actual logic.** When a route matches a URL, it calls a controller function. The controller does the real work: talking to the database, processing data, sending responses. Separated from routes so routes stay clean and short.
-
-### Why `middlewares/`?
-
-**Middleware = processing that happens BEFORE the controller.** Think of airport security: before you board (reach the controller), you pass through security (middleware). Example: Multer middleware reads the uploaded file from the request before the controller gets it.
-
-### Why `models/`?
-
-**Models = data blueprints.** A model defines what your data LOOKS LIKE in the database. "A Post has an image (string) and a caption (string)." Each file = one MongoDB collection. When you need to know what data is stored, look here.
-
-### Why `services/`?
-
-**Services = external API wrappers.** A service talks to an external system (ImageKit, email, payment). If you ever switch from ImageKit to AWS S3, you only change the service file — nothing else in your app changes. This is separation of concerns.
-
----
-
-## Code Walkthrough — File by File
-
-Every line of every file, explained.
-
----
-
-### 1. `package.json` — Project Configuration
-
-This file is the "ID card" of your Node.js project. It defines metadata, scripts, and dependencies. It's created when you run `npm init`.
+The `package.json` file is like your project's ID card. It tells Node.js and npm everything about your project.
 
 ```json
 {
     "name": "the-backend",
-```
-
-- `"name"` — The project's name. Used when publishing to npm (not relevant here).
-
-```json
     "version": "1.0.0",
-```
-
-- `"version"` — Current version of the project. Follows semantic versioning (major.minor.patch).
-
-```json
-    "description": "npm init -y => \r npm install nodemon\r npm install express",
-```
-
-- `"description"` — A text description of the project (this currently has setup notes, could be more descriptive).
-
-```json
     "main": "server.js",
-```
-
-- `"main"` — The entry point file. When someone imports your package or Node.js starts, it runs this file.
-
-```json
+    "type": "commonjs",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
         "start": "node server.js",
         "dev": "nodemon server.js"
     },
-```
-
-- `"scripts"` — Custom commands you can run with `npm run <name>`:
-    - `"test"` — Placeholder. Currently just prints an error (no tests written yet).
-    - `"start"` — Runs `node server.js`. Used in production. `node` runs the file once.
-    - `"dev"` — Runs `nodemon server.js`. Nodemon watches for file changes and auto-restarts the server. Used during development.
-
-```json
-    "type": "commonjs",
-```
-
-- `"type"` — Module system. `"commonjs"` means we use `require()` and `module.exports` (the older Node.js way). The alternative is `"module"` which uses `import`/`export`.
-
-```json
-    "devDependencies": {
-        "nodemon": "^3.1.11"
-    },
-```
-
-- `"devDependencies"` — Packages needed only during development, not in production.
-    - `nodemon` — Auto-restarts the server when files change. The `^` means "compatible with version 3.1.11".
-
-```json
     "dependencies": {
-        "@imagekit/nodejs": "^7.3.0",
-        "dotenv": "^17.2.4",
-        "express": "^5.2.1",
-        "mongoose": "^9.2.0",
-        "multer": "^2.0.2"
+        "@imagekit/nodejs": "...",
+        "cors": "...",
+        "dotenv": "...",
+        "express": "...",
+        "mongoose": "...",
+        "multer": "..."
+    },
+    "devDependencies": {
+        "nodemon": "..."
     }
+}
 ```
 
-- `"dependencies"` — Packages needed to run the app:
-    - `@imagekit/nodejs` — Official ImageKit SDK for uploading images.
-    - `dotenv` — Reads `.env` files and loads variables into `process.env`.
-    - `express` — Web framework for handling HTTP requests and responses.
-    - `mongoose` — ODM for MongoDB. Provides schemas, validation, and query API.
-    - `multer` — Middleware for processing file uploads from forms.
+**Line-by-line:**
+
+| Field                | What It Means                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"name"`             | The project name. Used by npm to identify the package.                                                                                            |
+| `"version"`          | Current version number following semantic versioning (major.minor.patch).                                                                         |
+| `"main"`             | The entry file. When you `require()` this package, Node starts here.                                                                              |
+| `"type": "commonjs"` | Use `require()` / `module.exports` syntax (traditional Node.js style). The alternative is `"module"` which uses `import` / `export` (ES Modules). |
+| `"scripts"`          | Custom commands you run with `npm run <name>`.                                                                                                    |
+| `"start"`            | `npm start` → Runs `node server.js` (starts the server).                                                                                          |
+| `"dev"`              | `npm run dev` → Runs `nodemon server.js` (starts with auto-restart on file changes).                                                              |
+| `"dependencies"`     | Packages needed for the app to RUN (installed in production + development).                                                                       |
+| `"devDependencies"`  | Packages only needed during DEVELOPMENT (like nodemon — auto-restarter).                                                                          |
+
+**What is `npm install`?** It reads `package.json`, downloads all listed packages from the npm registry (npmjs.com), and puts them in the `node_modules/` folder.
+
+**What is `node_modules/`?** The folder where all downloaded packages live. It's often huge (hundreds of folders). Never edit files inside it. Never commit it to Git (that's why `.gitignore` excludes it).
 
 ---
 
-### 2. `.env` — Environment Variables
+## ️ .env and .env.example — Environment Variables
 
-Environment variables are settings that change between environments (development, staging, production). They're stored outside the code so secrets aren't committed to Git.
+### What are Environment Variables?
+
+Environment variables are values that are different in different environments (your laptop vs a production server). They store secrets (passwords, API keys) that should NEVER be in your code or on GitHub.
+
+### .env.example (safe to share — it's a template):
 
 ```env
 PORT=3000
+MONGODB_URI=your_mongodb_connection_string_here
+IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key_here
 ```
 
-- `PORT` — Which port the server listens on. `3000` means `http://localhost:3000`. In production, this might be `80` or `443`.
+### .env (YOUR actual secrets — never commit this!):
 
 ```env
-MONGODB_URI=your_mongodb_connection_string
+PORT=3000
+MONGODB_URI=mongodb+srv://aditya:mysecretpassword@cluster0.abc123.mongodb.net/the-backend
+IMAGEKIT_PRIVATE_KEY=private_abc123xyz456
 ```
 
-- `MONGODB_URI` — The full connection string to your MongoDB database. Includes the username, password, host, and database name.
+### How does code read these values?
 
-```env
-IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key
-```
+The `dotenv` package reads the `.env` file and puts each value into `process.env`:
 
-- `IMAGEKIT_PRIVATE_KEY` — Your secret API key for ImageKit. Used to authenticate when uploading images. **Never share this publicly.**
+- `process.env.PORT` → `"3000"`
+- `process.env.MONGODB_URI` → `"mongodb+srv://..."`
+- `process.env.IMAGEKIT_PRIVATE_KEY` → `"private_abc123..."`
 
 ---
 
-### 3. `server.js` — Entry Point
+## File-by-File Code Walkthrough
 
-This is the first file that runs. It starts the server and connects to the database.
+---
 
-```javascript
+### 1. `server.js` — Entry Point (The Front Door)
+
+This is the **first file that runs** when you start the app. Its only jobs are:
+
+1. Connect to the database
+2. Start the HTTP server
+3. Handle shutdown gracefully
+
+```js
 const app = require("./src/app");
 ```
 
-- **`require("./src/app")`** — Imports the configured Express application from `src/app.js`.
-- **`require()`** — The CommonJS way to import a module (file). It finds the file, runs it, and returns whatever that file `module.exports`.
-- **`"./src/app"`** — Relative path. `./` means "current directory." We don't need `.js` extension because Node.js adds it automatically.
+- **What:** Imports the configured Express app from `src/app.js`.
+- **`require()`** is how CommonJS loads other files/modules. It reads the file, runs it, and returns whatever that file exported with `module.exports`.
+- **Why separate?** `server.js` handles STARTING the server. `app.js` handles CONFIGURING the server. Separating them keeps each file focused on one job.
 
-```javascript
-const connectDB = require("./src/config/db");
+```js
+const { connectDB, mongoose } = require("./src/config/db");
 ```
 
-- Imports the `connectDB` function from `src/config/db.js`. This function connects to MongoDB.
+- **What:** Imports two things from `db.js`:
+    - `connectDB` — a function that connects to MongoDB
+    - `mongoose` — the Mongoose library instance (used later to close the DB connection)
+- **`{ connectDB, mongoose }`** is called "destructuring" — it pulls specific properties out of an object. `db.js` exports `{ connectDB, mongoose }` and we're grabbing both.
 
-```javascript
-const PORT = process.env.PORT || 3001;
+```js
+const { DEFAULT_PORT } = require("./src/config/constants");
 ```
 
-- **`process.env.PORT`** — Reads the `PORT` variable from the `.env` file (loaded by dotenv in app.js).
-- **`||`** — The OR operator. If `process.env.PORT` is `undefined` (not set), use `3001` as a fallback.
-- **`const`** — Declares a constant variable (can't be reassigned).
+- **What:** Imports the default port number (3000) from our constants file.
+- **Why from constants?** So if we ever want to change the default port, we only change it in ONE place.
 
-```javascript
-connectDB();
+```js
+const PORT = process.env.PORT || DEFAULT_PORT;
 ```
 
-- Calls the database connection function. This runs the `mongoose.connect()` call inside `db.js`. We do this before starting the server so the database is ready before any requests come in.
+- **What:** Sets the port number.
+- **`process.env.PORT`** — Reads the PORT value from environment variables (the `.env` file).
+- **`||`** — The OR operator. If `process.env.PORT` is undefined (not set), use `DEFAULT_PORT` (3000) instead.
+- **Why?** In production (like Heroku), the hosting platform sets PORT for you. During development, you might not set it, so we fall back to 3000.
 
-```javascript
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+```js
+async function startServer() {
 ```
 
-- **`app.listen(PORT, callback)`** — Tells Express to start accepting HTTP requests on the given port.
-- **`() => { ... }`** — An arrow function (callback). This runs AFTER the server successfully starts.
-- **`` `Server is running on http://localhost:${PORT}` ``** — A template literal (backtick string). `${PORT}` inserts the value of the `PORT` variable.
-- **`console.log()`** — Prints a message to the terminal so you know the server is running.
+- **What:** Declares an async function.
+- **`async`** — Means this function can use `await` (wait for Promises to resolve). Database connections and server startup are async operations (they take time).
+
+```js
+await connectDB();
+```
+
+- **What:** Calls the `connectDB()` function and WAITS for it to finish.
+- **`await`** — Pauses execution until the Promise resolves. We need the database connected BEFORE starting the server.
+- **Why?** If the database isn't connected and someone makes a request, it would crash. So we connect first.
+
+```js
+    const server = app.listen(PORT, () => {
+        console.log(`\n Server is running on http://localhost:${PORT}`);
+        ...
+    });
+```
+
+- **`.listen(PORT, callback)`** — Tells Express to start accepting HTTP requests on the given port.
+- **The callback function** runs ONCE when the server is successfully started.
+- **Template literals** — The backtick strings with `${PORT}` insert variable values into the string. `${PORT}` becomes `3000`.
+- **`server`** — We save the returned server object so we can close it later during shutdown.
+
+```js
+    const gracefulShutdown = (signal) => { ... };
+```
+
+- **What:** A function that cleanly stops the server.
+- **"Graceful shutdown"** means: stop accepting new requests, finish any in-progress requests, close the database connection, then exit. This prevents data corruption.
+
+```js
+    server.close(async () => { ... });
+```
+
+- **`server.close()`** — Stops the server from accepting new connections. Existing connections are allowed to finish.
+
+```js
+await mongoose.connection.close();
+```
+
+- **What:** Closes the MongoDB connection cleanly.
+- **Why?** If you just kill the process (`process.exit()`), the database connection might not close properly, which can leave "zombie" connections on MongoDB.
+
+```js
+setTimeout(() => {
+    console.error(" Shutdown timed out. Forcing exit...");
+    process.exit(1);
+}, 10000);
+```
+
+- **What:** If shutdown takes more than 10 seconds, force-exit the process.
+- **Why?** Sometimes `server.close()` hangs (e.g., a request is stuck). This timeout prevents the server from hanging forever.
+- **`process.exit(1)`** — Exits the Node.js process. `1` means "exited with an error." `0` would mean "exited successfully."
+
+```js
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+```
+
+- **`process.on("signal", callback)`** — Listen for operating system signals.
+- **SIGTERM** — Sent by cloud platforms (AWS, Heroku) when they want your app to stop.
+- **SIGINT** — Sent when you press Ctrl+C in the terminal.
+
+```js
+process.on("unhandledRejection", (reason) => { ... });
+```
+
+- **What:** Catches Promises that were rejected (errored) but nobody caught the error.
+- **Example:** If you call `await someFunction()` without a try/catch and it fails, this handler catches it.
+- **Why?** Without this, the error would be silently swallowed and you'd never know something broke.
+
+```js
+process.on("uncaughtException", (error) => { ... process.exit(1); });
+```
+
+- **What:** Catches synchronous errors that weren't caught by try/catch.
+- **Why `process.exit(1)`?** After an uncaught exception, the app is in an unpredictable state. It's safest to exit and let a process manager (like PM2) restart it.
+
+```js
+startServer();
+```
+
+- **What:** Actually calls the function to start everything. Without this line, nothing would happen!
 
 ---
 
-### 4. `src/app.js` — Express Application Setup
+### 2. `src/app.js` — Express Application Setup (The Brain)
 
-Creates the Express app, adds middleware, and mounts routes.
+This file creates and configures the Express app — the "brain" that decides how to handle every request.
 
-```javascript
+```js
 const express = require("express");
 ```
 
-- Imports the Express library. `express` is a function that creates an application when called.
+- **What:** Imports the Express.js framework.
+- **Express** is a function. When you call `express()`, it creates an "app" object that can handle HTTP requests.
 
-```javascript
+```js
 require("dotenv").config();
 ```
 
-- **`require("dotenv")`** — Imports the dotenv library.
-- **`.config()`** — Immediately calls its `config()` method. This reads the `.env` file in the project root and loads all variables into `process.env`.
-- **Why here?** This must run before any code tries to read `process.env.MONGODB_URI` or any other env variable. Since `app.js` is imported by `server.js` early, this is a good place.
+- **What:** Loads the `.env` file into `process.env`.
+- **Why at the top?** This must run BEFORE any code that reads `process.env` values. Otherwise, the values won't be there yet.
+- **Why `require("dotenv").config()` on one line?** It imports dotenv AND immediately calls `.config()` in a single line. Same as writing `const dotenv = require("dotenv"); dotenv.config();`.
 
-```javascript
+```js
+const cors = require("cors");
+```
+
+- **What:** Imports the CORS middleware.
+- **Why?** By default, browsers block requests from one domain to another. Our frontend (localhost:5173) needs to call our backend (localhost:3000). CORS allows this.
+
+```js
 const postRoutes = require("./routes/post.routes");
 ```
 
-- Imports the post routes. This is an Express Router object that contains all the route definitions for posts.
+- **What:** Imports the router that defines all post-related endpoints.
 
-```javascript
+```js
+const globalErrorHandler = require("./middlewares/error.middleware");
+```
+
+- **What:** Imports our custom error handling middleware.
+
+```js
+const { HTTP_STATUS } = require("./config/constants");
+```
+
+- **What:** Imports readable HTTP status codes (like `OK: 200`, `NOT_FOUND: 404`).
+
+```js
 const app = express();
 ```
 
-- **`express()`** — Creates a new Express application instance. This `app` object has methods like `.use()`, `.get()`, `.post()`, `.listen()`.
+- **What:** Creates a new Express application.
+- **`app`** is now an object with methods like `.use()`, `.get()`, `.post()`, `.listen()`.
 
-```javascript
+```js
+app.use(cors());
+```
+
+- **`app.use()`** — Registers middleware that runs on EVERY request.
+- **`cors()`** — The CORS middleware. With no arguments, it allows requests from ANY origin. In production, you'd restrict this to your frontend's domain.
+
+```js
 app.use(express.json());
 ```
 
-- **`app.use()`** — Registers a middleware that runs on EVERY request.
-- **`express.json()`** — Built-in Express middleware that parses incoming request bodies containing JSON. Without this, `req.body` would be `undefined` when a client sends JSON data.
-- **Example:** If a client sends `{"caption": "Hello"}`, this middleware parses it and puts it into `req.body.caption`.
+- **What:** Parses JSON request bodies.
+- **Why?** When the frontend sends JSON data (like `{"caption": "Hello"}`), Express needs to parse (convert) that JSON string into a JavaScript object. This middleware does that and puts the result in `req.body`.
 
-```javascript
-app.use("/", postRoutes);
+```js
+app.use(express.urlencoded({ extended: true }));
 ```
 
-- **`app.use("/", postRoutes)`** — Mounts the post router at the root path `/`.
-- This means all routes defined in `post.routes.js` are accessible directly. For example, if `post.routes.js` defines `router.post("/create-post")`, it becomes `POST /create-post` (not `POST //create-post`).
-- If we wrote `app.use("/api", postRoutes)`, then it would be `POST /api/create-post`.
+- **What:** Parses URL-encoded form data (like `caption=Hello&author=John`).
+- **`extended: true`** — Allows nested objects in the form data (uses the `qs` library instead of the simpler `querystring` library).
 
-```javascript
-module.exports = app;
-```
-
-- **`module.exports`** — Makes the `app` available to other files. When `server.js` does `require("./src/app")`, it gets this `app` object.
-
----
-
-### 5. `src/config/db.js` — Database Connection
-
-Connects to MongoDB using Mongoose.
-
-```javascript
-const mongoose = require("mongoose");
-```
-
-- Imports the Mongoose library. Mongoose is an ODM — it provides schemas, models, and a clean API for interacting with MongoDB.
-
-```javascript
-async function connectDB() {
-```
-
-- **`async function`** — Declares an asynchronous function. The `async` keyword means this function can use `await` inside it.
-- **Why async?** Connecting to a database takes time (it's a network operation). `async/await` lets us wait for it to finish without blocking the entire program.
-
-```javascript
-    try {
-```
-
-- **`try { ... } catch { ... }`** — Error handling. Code inside `try` runs normally. If any line throws an error, execution jumps to `catch`.
-
-```javascript
-await mongoose.connect(process.env.MONGODB_URI);
-```
-
-- **`mongoose.connect(uri)`** — Connects to the MongoDB database at the given URI (connection string).
-- **`await`** — Pauses this function until the connection is established (or fails). Without `await`, the code would continue immediately without waiting.
-- **`process.env.MONGODB_URI`** — Reads the connection string from the environment variable (set in `.env`).
-
-```javascript
-console.log("Database Connected");
-```
-
-- Prints a success message to the terminal.
-
-```javascript
-    } catch (error) {
-        console.log(error);
-    }
-```
-
-- **`catch (error)`** — If `mongoose.connect()` fails (wrong password, network issue, etc.), the error object is caught here and printed.
-
-```javascript
-module.exports = connectDB;
-```
-
-- Exports the function so `server.js` can call it.
-
----
-
-### 6. `src/models/post.model.js` — Data Schema
-
-Defines what a "Post" looks like in the database.
-
-```javascript
-const mongoose = require("mongoose");
-```
-
-- Imports Mongoose to use its Schema and model features.
-
-```javascript
-const postSchema = new mongoose.Schema({
-    image: String,
-    caption: String,
+```js
+app.get("/health", (req, res) => {
+    res.status(HTTP_STATUS.OK).json({
+        success: true,
+        message: "Server is healthy and running ",
+        timestamp: new Date().toISOString(),
+    });
 });
 ```
 
-- **`new mongoose.Schema({ ... })`** — Creates a new schema (data structure definition).
-- **`image: String`** — The `image` field stores a String value (the URL of the uploaded image).
-- **`caption: String`** — The `caption` field stores a String value (the text description).
-- **What this means:** Every post document in MongoDB will have these two fields. Mongoose will also auto-add `_id` (unique identifier) and `__v` (version number).
-- **You could add more options:**
-    ```javascript
-    image: { type: String, required: true }  // Makes the field mandatory
-    ```
+- **What:** A "health check" endpoint at GET `/health`.
+- **Why?** Monitoring tools (like UptimeRobot or load balancers) hit this URL every few seconds to check if the server is alive. If it responds, the server is healthy. If it doesn't, something is wrong.
+- **`req`** — The request object (contains info about the incoming HTTP request).
+- **`res`** — The response object (used to send data back to the client).
+- **`res.status(200)`** — Sets the HTTP status code to 200 (OK).
+- **`.json({...})`** — Sends a JSON response.
 
-```javascript
-const postModel = mongoose.model("Post", postSchema);
+```js
+app.use("/api", postRoutes);
 ```
 
-- **`mongoose.model("Post", postSchema)`** — Creates a model from the schema.
-- **`"Post"`** — The model name. Mongoose automatically creates/connects to a MongoDB collection called `"posts"` (lowercase, pluralized).
-- **The model gives you methods like:**
-    - `postModel.create({...})` — Create a new document
-    - `postModel.find()` — Find all documents
-    - `postModel.findById(id)` — Find one by ID
-    - `postModel.findByIdAndUpdate(id, {...})` — Update one
-    - `postModel.findByIdAndDelete(id)` — Delete one
+- **What:** Mounts the post router at the `/api` prefix.
+- **What does "mount" mean?** All routes defined in `postRoutes` are now prefixed with `/api`. So a route defined as `/create-post` in the router becomes `/api/create-post`.
+- **Why the `/api` prefix?** It's a convention that separates API routes from other routes (like serving HTML pages). It makes the URL structure clear: anything starting with `/api` is a data endpoint.
 
-```javascript
-module.exports = postModel;
+```js
+app.use((req, res) => {
+    res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: `Route not found: ${req.method} ${req.originalUrl}`,
+    });
+});
 ```
 
-- Exports the model so controllers can use it for database operations.
+- **What:** A 404 "catch-all" handler. If no route matched the request, this runs.
+- **Why is it AFTER all routes?** Express middleware runs in ORDER. If a request doesn't match any previous route, it falls through to this one.
+- **`req.method`** — The HTTP method (GET, POST, PUT, DELETE).
+- **`req.originalUrl`** — The full URL path the user requested.
+
+```js
+app.use(globalErrorHandler);
+```
+
+- **What:** The global error handler. MUST be the last `app.use()`.
+- **Why last?** When any route/middleware calls `next(error)`, Express skips all remaining normal middleware and jumps to the error handler. It must be registered last so it can catch errors from everything above it.
+
+```js
+module.exports = app;
+```
+
+- **What:** Exports the configured app so `server.js` can use it.
+- **`module.exports`** — In CommonJS, this is how you expose code from a file to other files that `require()` it.
 
 ---
 
-### 7. `src/services/storage.service.js` — ImageKit Upload
+### 3. `src/config/constants.js` — Centralized Magic Values
 
-Handles uploading images to ImageKit's cloud storage.
+"Magic values" are hardcoded numbers or strings in your code. Instead of scattering `5242880` across multiple files, we put it here with a clear name.
 
-```javascript
+```js
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+```
+
+- **What:** Maximum upload file size = 5MB.
+- **`5 * 1024 * 1024`** — Math: 5 × 1024 bytes/KB × 1024 KB/MB = 5,242,880 bytes = 5MB.
+- **Why a calculation instead of `5242880`?** It's easier to read and understand. You can clearly see "5 megabytes."
+
+```js
+const ALLOWED_FILE_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+];
+```
+
+- **What:** The MIME types we accept for uploads.
+- **MIME type** — A string that identifies the type of a file. When a browser uploads `photo.jpg`, it sends along `image/jpeg` as the MIME type.
+
+```js
+const HTTP_STATUS = {
+    OK: 200,
+    CREATED: 201,
+    BAD_REQUEST: 400,
+    NOT_FOUND: 404,
+    INTERNAL_SERVER: 500,
+};
+```
+
+- **What:** HTTP status codes with readable names.
+- **Why?** `res.status(HTTP_STATUS.BAD_REQUEST)` is clearer than `res.status(400)`. Anyone reading the code immediately knows what 400 means.
+
+| Code | Name                  | When to Use                                             |
+| ---- | --------------------- | ------------------------------------------------------- |
+| 200  | OK                    | Request succeeded normally                              |
+| 201  | Created               | A new resource was created (like a new post)            |
+| 400  | Bad Request           | Client sent invalid data (missing fields, wrong format) |
+| 404  | Not Found             | The requested URL/resource doesn't exist                |
+| 500  | Internal Server Error | Something broke on the server (a bug)                   |
+
+```js
+const DEFAULT_PORT = 3000;
+```
+
+- **What:** The default port if `PORT` isn't set in `.env`.
+
+```js
+module.exports = {
+    MAX_FILE_SIZE,
+    ALLOWED_FILE_TYPES,
+    HTTP_STATUS,
+    DEFAULT_PORT,
+};
+```
+
+- **What:** Exports all constants as a single object so other files can import them.
+
+---
+
+### 4. `src/config/db.js` — MongoDB Connection
+
+```js
+const mongoose = require("mongoose");
+```
+
+- **What:** Imports Mongoose — the ODM (Object Data Modeling) library for MongoDB.
+- **What is an ODM?** It's a layer between your JavaScript code and MongoDB. Instead of writing raw MongoDB queries, you use JavaScript objects and methods. Mongoose also provides schemas (data structure definitions) and validation.
+
+```js
+mongoose.connection.on("connected", () => { ... });
+mongoose.connection.on("error", (err) => { ... });
+mongoose.connection.on("disconnected", () => { ... });
+```
+
+- **What:** Event listeners for the database connection.
+- **`.on("event", callback)`** — When this event occurs, run this function.
+- **Why?** These log connection status so you can see what's happening with the database. Especially useful for debugging "why isn't my app working?" — you can see if the DB disconnected.
+
+```js
+async function connectDB() {
+    try {
+        await mongoose.connect(process.env.MONGODB_URI);
+```
+
+- **`mongoose.connect(uri)`** — Connects to MongoDB using the connection string from `.env`.
+- **`await`** — Waits for the connection to complete before continuing.
+- **`try`** — Attempts to run this code. If an error occurs, it jumps to `catch`.
+
+```js
+    } catch (error) {
+        console.error(" Database Connection Failed:", error.message);
+        process.exit(1);
+    }
+```
+
+- **`catch`** — Runs if `mongoose.connect()` fails (wrong URI, database is down, network issue, etc.).
+- **`process.exit(1)`** — Exits the app immediately. The app CANNOT function without a database, so there's no point continuing.
+
+```js
+module.exports = { connectDB, mongoose };
+```
+
+- **What:** Exports both the connection function and the mongoose instance.
+- **Why export `mongoose`?** It's needed in `server.js` to close the database connection during graceful shutdown (`mongoose.connection.close()`).
+
+---
+
+### 5. `src/controllers/post.controller.js` — Business Logic
+
+Controllers contain the actual LOGIC that runs when someone calls an API endpoint. They:
+
+1. Validate the incoming data
+2. Do the work (upload image, save to database)
+3. Send back a response
+
+```js
+const postModel = require("../models/post.model");
+```
+
+- **What:** The Mongoose model for Posts. Used to create and read posts from MongoDB.
+- **`..`** — Means "go up one directory." From `controllers/`, `..` goes to `src/`, then into `models/`.
+
+```js
+const uploadFile = require("../services/storage.service");
+```
+
+- **What:** The function that uploads images to ImageKit.
+
+```js
+const { HTTP_STATUS } = require("../config/constants");
+```
+
+- **What:** HTTP status codes for readable responses.
+
+```js
+const createPost = async (req, res, next) => {
+```
+
+- **What:** The controller function for POST `/api/create-post`.
+- **`req`** — The request object. Contains `req.file` (the uploaded image) and `req.body` (the form data like caption).
+- **`res`** — The response object. Used to send data back to the client.
+- **`next`** — A function that passes control to the next middleware. When called with an error `next(error)`, it jumps to the error handler.
+- **Arrow function** `=>` — A shorter way to write functions. `(a, b) => { ... }` is similar to `function(a, b) { ... }`.
+
+```js
+    try {
+        if (!req.file) {
+            return res.status(HTTP_STATUS.BAD_REQUEST).json({
+                success: false,
+                message: "Image file is required. Please upload an image.",
+            });
+        }
+```
+
+- **`req.file`** — This is set by the Multer middleware. If the user didn't upload a file, `req.file` is `undefined`.
+- **`!req.file`** — The `!` (NOT) operator. If `req.file` is undefined/null/false, this is `true`.
+- **`return`** — Stops the function here. We don't want to continue if there's no image.
+- **Why check on the server AND the client?** Client-side validation (in the frontend) can be bypassed (someone could use Postman or cURL). Server-side validation is the final safety net.
+
+```js
+        if (!req.body.caption || !req.body.caption.trim()) {
+```
+
+- **`req.body.caption`** — The caption text sent in the request body.
+- **`.trim()`** — Removes whitespace from both ends of a string. `"  hello  ".trim()` → `"hello"`. If someone sends just spaces, `.trim()` returns `""` which is falsy.
+- **`||`** — OR operator. If caption is undefined OR if trimmed caption is empty, reject.
+
+```js
+const result = await uploadFile(req.file.buffer);
+```
+
+- **`req.file.buffer`** — The raw binary data of the uploaded file (a Buffer).
+- **Why buffer?** We're using Multer's memory storage, which keeps the file in RAM (not on disk). The Buffer is the file's raw bytes.
+- **`result`** — The ImageKit response object, which contains `.url` (the public URL of the uploaded image).
+
+```js
+const post = await postModel.create({
+    image: result.url,
+    caption: req.body.caption.trim(),
+});
+```
+
+- **`postModel.create({...})`** — Creates a new document (record) in the MongoDB "posts" collection.
+- **`result.url`** — The CDN URL where ImageKit is hosting the uploaded image.
+- **`await`** — Waits for MongoDB to save the document before continuing.
+
+```js
+res.status(HTTP_STATUS.CREATED).json({
+    success: true,
+    message: "Post created successfully",
+    post,
+});
+```
+
+- **`HTTP_STATUS.CREATED` (201)** — Correct status code for "a new resource was created."
+- **`post`** — This is shorthand for `post: post`. In modern JavaScript, if the key name matches the variable name, you can just write it once.
+
+```js
+    } catch (error) {
+        next(error);
+    }
+```
+
+- **`next(error)`** — Passes the error to the global error handler middleware instead of crashing the server.
+- **Why not handle the error here?** Centralizing error handling in one middleware means we don't repeat error-response logic in every controller.
+
+```js
+const getPosts = async (req, res, next) => {
+    try {
+        const posts = await postModel.find().sort({ createdAt: -1 });
+```
+
+- **`.find()`** — Fetches ALL documents from the "posts" collection. No filter = get everything.
+- **`.sort({ createdAt: -1 })`** — Sort by `createdAt` in descending order (-1 = newest first, 1 = oldest first).
+
+```js
+        count: posts.length,
+```
+
+- **`.length`** — The number of items in the array. Useful for the frontend to know how many posts exist.
+
+---
+
+### 6. `src/middlewares/upload.middleware.js` — File Upload Config
+
+```js
+const multer = require("multer");
+```
+
+- **Multer** — A middleware that handles `multipart/form-data` (the format used for file uploads). When a form has `<input type="file">`, the browser sends the data as multipart, and Multer reads it.
+
+```js
+const { MAX_FILE_SIZE, ALLOWED_FILE_TYPES } = require("../config/constants");
+```
+
+- **What:** Gets the file limits from our constants file (5MB max, images only).
+
+```js
+const fileFilter = (req, file, cb) => {
+```
+
+- **`fileFilter`** — A function Multer calls for each uploaded file to decide if it should be accepted or rejected.
+- **`cb`** — "Callback." Multer expects you to call this to say "accept" or "reject."
+
+```js
+if (ALLOWED_FILE_TYPES.includes(file.mimetype)) {
+    cb(null, true);
+} else {
+    cb(new Error("Only image files are allowed!"), false);
+}
+```
+
+- **`file.mimetype`** — The type of the uploaded file (e.g., `"image/jpeg"`).
+- **`.includes()`** — Checks if the array contains the value. Returns `true` or `false`.
+- **`cb(null, true)`** — First arg is error (null = no error), second is accept (true = yes).
+- **`cb(new Error(...), false)`** — First arg is an error, second is reject (false = no).
+
+```js
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_FILE_SIZE },
+    fileFilter: fileFilter,
+});
+```
+
+- **`multer.memoryStorage()`** — Store the file in RAM (as a Buffer) instead of writing to disk. We don't need the file on disk because we're sending it directly to ImageKit.
+- **`limits: { fileSize: MAX_FILE_SIZE }`** — Reject files larger than 5MB. If exceeded, Multer throws a `MulterError` with code `LIMIT_FILE_SIZE`.
+
+---
+
+### 7. `src/middlewares/error.middleware.js` — Global Error Handler
+
+This is the "safety net" that catches ALL errors in the app and sends a proper JSON response instead of crashing.
+
+```js
+const globalErrorHandler = (err, req, res, next) => {
+```
+
+- **IMPORTANT:** Express identifies this as an error handler because it has **4 parameters** (err, req, res, next). Normal middleware has 3 (req, res, next). That extra `err` parameter is key.
+
+```js
+    if (err instanceof multer.MulterError) {
+```
+
+- **`instanceof`** — Checks if an error was created by a specific class. Multer throws `MulterError` objects for its own errors (file too large, too many files, etc.).
+
+```js
+    if (err.name === "ValidationError") {
+```
+
+- **What:** Catches Mongoose validation errors — when data doesn't match the schema (like a missing required field).
+
+```js
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+```
+
+- **What:** Only includes the error stack trace in development mode, not production.
+- **`...`** — Spread operator. Spreads the object properties into the parent object.
+- **`condition && value`** — Short-circuit. If condition is false, the whole expression is false (nothing spreads). If true, the value (the object with `stack`) gets spread in.
+- **Why hide the stack in production?** Stack traces reveal internal file paths and code structure — information that could help hackers find vulnerabilities.
+
+---
+
+### 8. `src/models/post.model.js` — Database Schema
+
+```js
+const mongoose = require("mongoose");
+```
+
+```js
+const postSchema = new mongoose.Schema(
+    {
+        image: { type: String, required: true, trim: true },
+        caption: { type: String, required: true, trim: true },
+    },
+    {
+        timestamps: true,
+    },
+);
+```
+
+- **`new mongoose.Schema({...}, options)`** — Defines the STRUCTURE of a document.
+- **`type: String`** — This field must be a string.
+- **`required: true`** — This field must exist. If you try to save a post without it, Mongoose throws a `ValidationError`.
+- **`trim: true`** — Automatically removes whitespace from the beginning and end. `"  hello  "` becomes `"hello"`.
+- **`timestamps: true`** — Automatically adds and manages `createdAt` and `updatedAt` fields. You don't need to set them manually.
+
+```js
+const postModel = mongoose.model("Post", postSchema);
+```
+
+- **`mongoose.model("Post", postSchema)`** — Creates a Model from the schema.
+- **The first argument `"Post"`** — The model name. Mongoose automatically creates a collection called `"posts"` (lowercase, pluralized) in MongoDB.
+- **A Model** is like a class — you use it to create, read, update, and delete documents:
+    - `postModel.create({...})` — Insert a new document
+    - `postModel.find()` — Get all documents
+    - `postModel.findById(id)` — Get one document by ID
+    - `postModel.findByIdAndUpdate(id, {...})` — Update a document
+    - `postModel.findByIdAndDelete(id)` — Delete a document
+
+---
+
+### 9. `src/routes/post.routes.js` — URL-to-Controller Mapping
+
+```js
+const express = require("express");
+const router = express.Router();
+```
+
+- **`express.Router()`** — Creates a mini-app (router) that only handles routes. It's like a sub-section of the main app.
+- **Why use Router?** It keeps routes organized. Instead of putting all routes in `app.js`, you put related routes in separate files and "mount" them.
+
+```js
+const upload = require("../middlewares/upload.middleware");
+const { createPost, getPosts } = require("../controllers/post.controller");
+```
+
+```js
+router.post("/create-post", upload.single("image"), createPost);
+```
+
+- **`router.post("/create-post", ...)`** — Handle POST requests to `/create-post` (full path: `/api/create-post` because this router is mounted at `/api`).
+- **`upload.single("image")`** — A middleware that reads ONE file from the form field named `"image"`. It puts the file in `req.file`.
+- **`createPost`** — The controller function that runs after Multer processes the file.
+- **Multiple arguments** — Express lets you chain middlewares. The request flows through each one in order: Multer first, then the controller.
+
+```js
+router.get("/post", getPosts);
+```
+
+- **`router.get("/post", getPosts)`** — Handle GET requests to `/post` (full path: `/api/post`). No middleware needed — we're just reading data.
+
+---
+
+### 10. `src/services/storage.service.js` — ImageKit Upload
+
+```js
 const { ImageKit } = require("@imagekit/nodejs");
 ```
 
-- **`const { ImageKit }`** — Destructuring import. The `@imagekit/nodejs` package exports an object, and we're extracting the `ImageKit` class from it.
-- **Destructuring:** `const { ImageKit } = require(...)` is the same as:
-    ```javascript
-    const pkg = require("@imagekit/nodejs");
-    const ImageKit = pkg.ImageKit;
-    ```
+- **What:** Imports the ImageKit SDK (Software Development Kit) — a library that provides pre-built functions for interacting with ImageKit's API.
 
-```javascript
+```js
 const client = new ImageKit({
     privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
 });
 ```
 
-- **`new ImageKit({ ... })`** — Creates a new ImageKit client instance.
-- **`privateKey`** — Your secret API key, read from `.env`. This authenticates all requests to ImageKit.
+- **`new ImageKit({...})`** — Creates an ImageKit client configured with your private API key.
+- **Why `process.env`?** The private key is a secret. We keep it in `.env` and access it via `process.env`.
 
-```javascript
+```js
 async function uploadFile(buffer) {
 ```
 
-- **`buffer`** — A parameter containing the raw binary data of the uploaded file. This comes from multer's memory storage (`req.file.buffer`).
-- **What is a Buffer?** A Buffer is Node.js's way of handling raw binary data (like an image's bytes: `<Buffer ff d8 ff e0 ...>`).
+- **`buffer`** — The raw binary data of the file (a Node.js Buffer object). This comes from `req.file.buffer` (Multer's memory storage).
 
-```javascript
+```js
+const uniqueFileName = `image_${Date.now()}.jpg`;
+```
+
+- **`Date.now()`** — Returns the current time as milliseconds since January 1, 1970 (Unix timestamp). Example: `1705312200000`.
+- **Why unique names?** If two users upload files with the same name, one would overwrite the other. Timestamps ensure every filename is unique.
+
+```js
 const result = await client.files.upload({
     file: buffer.toString("base64"),
-    fileName: "image.jpg",
+    fileName: uniqueFileName,
 });
 ```
 
-- **`client.files.upload({ ... })`** — Calls ImageKit's upload API.
-- **`buffer.toString("base64")`** — Converts the binary Buffer to a base64 string. Base64 is a text encoding for binary data. ImageKit requires files to be sent as base64 strings.
-    - Binary: `<Buffer ff d8 ff e0 ...>` → Base64: `"/9j/4AAQ..."` (a long text string)
-- **`fileName: "image.jpg"`** — The name for the file on ImageKit's servers. All uploads get this default name (ImageKit appends unique suffixes automatically).
-- **`await`** — Waits for the upload to complete before continuing. The upload is a network request, so it takes time.
-- **`result`** — The response from ImageKit. Contains:
-    - `result.url` — The public CDN URL of the image (e.g., `https://ik.imagekit.io/your_id/image.jpg`)
-    - `result.fileId` — Unique file identifier
-    - `result.name` — Filename on ImageKit
+- **`buffer.toString("base64")`** — Converts the binary data to a base64 string (a text representation of binary data). ImageKit's API requires files as base64 strings.
+- **`result`** — The response from ImageKit. Contains `result.url` (the public CDN URL of the uploaded image).
 
-```javascript
-return result;
-```
-
-- Returns the ImageKit response to the caller (the controller).
-
-```javascript
-module.exports = uploadFile;
-```
-
-- Exports the function so controllers can use it.
-
----
-
-### 8. `src/middlewares/upload.middleware.js` — File Upload Handler
-
-Configures Multer to read file uploads from incoming requests.
-
-```javascript
-const multer = require("multer");
-```
-
-- Imports the Multer library.
-
-```javascript
-const upload = multer({ storage: multer.memoryStorage() });
-```
-
-- **`multer({ storage: ... })`** — Creates a configured Multer instance.
-- **`multer.memoryStorage()`** — Tells Multer to store uploaded files in RAM (memory) as Buffer objects, NOT on disk.
-    - **Memory storage:** File data is in `req.file.buffer` (a Buffer).
-    - **Disk storage (alternative):** File would be saved to a folder on your server.
-    - **Why memory?** Because we immediately upload the file to ImageKit. We don't need a local copy on disk.
-
-```javascript
-module.exports = upload;
-```
-
-- Exports the configured multer instance.
-- **How it's used in routes:**
-    ```javascript
-    // upload.single("image") — means:
-    // "Read ONE file from the form field named 'image'"
-    // After running, the file is available at req.file
-    router.post("/create-post", upload.single("image"), createPost);
-    ```
-- **Other multer methods:**
-    - `upload.single("fieldname")` — One file
-    - `upload.array("fieldname", maxCount)` — Multiple files, same field
-    - `upload.none()` — No files, just text fields
-
----
-
-### 9. `src/routes/post.routes.js` — Route Definitions
-
-Maps URLs to controller functions.
-
-```javascript
-const express = require("express");
-```
-
-- Imports Express to use its Router feature.
-
-```javascript
-const router = express.Router();
-```
-
-- **`express.Router()`** — Creates a new Router object. Think of it as a "mini Express app" that only handles routing. You define routes on it, then mount it in `app.js`.
-
-```javascript
-const upload = require("../middlewares/upload.middleware");
-```
-
-- **`"../middlewares/upload.middleware"`** — `../` means "go up one directory" (from `routes/` back to `src/`), then into `middlewares/`.
-- Imports the configured Multer instance.
-
-```javascript
-const { createPost, getPosts } = require("../controllers/post.controller");
-```
-
-- **Destructuring import.** The controller exports `{ createPost, getPosts }`, so we extract both functions.
-
-```javascript
-router.post("/create-post", upload.single("image"), createPost);
-```
-
-- **`router.post("/create-post", ...)`** — When someone sends a `POST` request to `/create-post`:
-    1. **First runs:** `upload.single("image")` — the upload middleware reads the file from the `"image"` form field and puts it in `req.file`.
-    2. **Then runs:** `createPost` — the controller function that uploads to ImageKit and saves to MongoDB.
-- **Why two functions?** Express supports chaining middleware. Each function runs in order. The middleware processes the file, then the controller uses it.
-
-```javascript
-router.get("/post", getPosts);
-```
-
-- **`router.get("/post", getPosts)`** — When someone sends a `GET` request to `/post`, run the `getPosts` controller (no middleware needed since there's no file upload).
-
-```javascript
-module.exports = router;
-```
-
-- Exports the router. In `app.js`, `app.use("/", router)` mounts it.
-
----
-
-### 10. `src/controllers/post.controller.js` — Request Handlers
-
-The actual business logic that runs when API endpoints are hit.
-
-```javascript
-const postModel = require("../models/post.model");
-```
-
-- Imports the Post Mongoose model to interact with the `posts` collection in MongoDB.
-
-```javascript
-const uploadFile = require("../services/storage.service");
-```
-
-- Imports the ImageKit upload function from the storage service.
-
-```javascript
-const createPost = async (req, res) => {
-```
-
-- **`async`** — This function uses `await` inside it (for database and API calls).
-- **`(req, res)`** — Every Express handler receives two objects:
-    - **`req` (Request)** — Contains all information about the incoming request:
-        - `req.body` — Parsed JSON or form text fields (e.g., `req.body.caption`)
-        - `req.file` — The uploaded file (set by Multer middleware)
-        - `req.params` — URL parameters (e.g., `/post/:id` → `req.params.id`)
-        - `req.query` — Query string (e.g., `/post?page=2` → `req.query.page`)
-    - **`res` (Response)** — Used to send a response back to the client:
-        - `res.status(201)` — Sets the HTTP status code
-        - `res.json({...})` — Sends a JSON response
-- **`=>`** — Arrow function syntax. `const fn = (a, b) => { ... }` is similar to `function fn(a, b) { ... }`.
-
-```javascript
-    try {
-        const result = await uploadFile(req.file.buffer);
-```
-
-- **`req.file.buffer`** — The raw binary data of the uploaded image (set by Multer's memory storage middleware).
-- **`await uploadFile(buffer)`** — Calls the storage service to upload the image to ImageKit. Waits for the upload to complete and catches the URL in `result`.
-
-```javascript
-const post = await postModel.create({
-    image: result.url,
-    caption: req.body.caption,
-});
-```
-
-- **`postModel.create({...})`** — Creates a new document in the MongoDB `posts` collection.
-- **`result.url`** — The public ImageKit URL of the uploaded image (e.g., `https://ik.imagekit.io/.../image.jpg`).
-- **`req.body.caption`** — The caption text sent by the client in the request body.
-- **`await`** — Waits for MongoDB to save the document and return the saved post (including the auto-generated `_id`).
-
-```javascript
-res.status(201).json({ message: "Post created successfully", post });
-```
-
-- **`res.status(201)`** — Sets HTTP status to `201 Created` (means "a new resource was successfully created").
-- **`.json({...})`** — Sends a JSON response to the client.
-- **`{ message: "...", post }`** — The response body. `post` is shorthand for `post: post` (ES6 shorthand property).
-
-```javascript
+```js
     } catch (error) {
-        res.status(500).json({ message: "Error creating post", error: error.message });
+        console.error(" ImageKit upload failed:", error.message);
+        throw new Error(`Failed to upload image to storage: ${error.message}`);
     }
 ```
 
-- **`catch (error)`** — If ANY line inside `try` throws an error, execution jumps here.
-- **`res.status(500)`** — HTTP `500 Internal Server Error` — something went wrong on the server.
-- **`error.message`** — A human-readable error description (e.g., `"Cannot read properties of undefined"`).
-
-```javascript
-const getPosts = async (req, res) => {
-    try {
-        const posts = await postModel.find();
-```
-
-- **`postModel.find()`** — Finds ALL documents in the `posts` collection. Returns an array.
-- **With no arguments**, `.find()` returns everything. You can filter: `.find({ caption: "hello" })`.
-
-```javascript
-res.status(200).json({ message: "Posts fetched successfully", posts });
-```
-
-- **`res.status(200)`** — HTTP `200 OK` — the request was successful.
-- **`posts`** — The array of all posts from the database.
-
-```javascript
-    } catch (error) {
-        res.status(500).json({ message: "Error fetching posts", error: error.message });
-    }
-};
-```
-
-- Same error handling pattern — catches database errors, network timeouts, etc.
-
-```javascript
-module.exports = { createPost, getPosts };
-```
-
-- **Exports both functions as an object.** The route file imports them with destructuring: `const { createPost, getPosts } = require(...)`.
+- **`throw new Error(...)`** — Creates a new error and throws it. This error propagates up to the controller, which passes it to `next(error)`, which sends it to the global error handler. The chain: service → controller → error middleware → response to user.
 
 ---
 
-## How a Request Flows Through the App
+## Request Lifecycle — Full Path of a Request
 
-Here's the complete journey of a `POST /create-post` request:
+When someone sends `POST /api/create-post` with an image and caption:
 
 ```
-Client (Postman/Browser/curl)
-    │
-    │  Sends: POST /create-post
-    │  Body: image file + caption text
-    │
-    ▼
-┌──────────────────────────────────┐
-│  server.js                       │
-│  App is listening on PORT 3000   │
-│  Receives the HTTP request       │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/app.js                      │
-│  1. express.json() → parses JSON │
-│  2. Matches URL "/" → postRoutes │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/routes/post.routes.js       │
-│  Matches POST "/create-post"     │
-│  → Runs upload.single("image")  │
-│  → Then runs createPost          │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/middlewares/upload.middleware│
-│  Multer reads the image file     │
-│  Stores it in memory (Buffer)    │
-│  Sets req.file = { buffer, ... } │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/controllers/post.controller │
-│  1. Gets req.file.buffer         │
-│  2. Calls uploadFile(buffer)    │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/services/storage.service    │
-│  Converts buffer to base64      │
-│  Uploads to ImageKit API         │
-│  Returns { url, fileId, ... }    │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/controllers/post.controller │
-│  3. Gets result.url              │
-│  4. Calls postModel.create()    │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/models/post.model           │
-│  Mongoose validates the data     │
-│  Saves to MongoDB "posts"        │
-│  Returns the saved document      │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│  src/controllers/post.controller │
-│  5. Sends response:              │
-│     Status: 201 Created          │
-│     { message, post }            │
-└──────────────┬───────────────────┘
-               │
-               ▼
-Client receives JSON response ✅
+1. Request arrives at Express server (server.js → app.listen)
+2. cors() middleware → checks if the origin is allowed → passes
+3. express.json() → tries to parse JSON body → passes
+4. express.urlencoded() → tries to parse form data → passes
+5. Router matches /api/create-post (app.js → postRoutes)
+6. upload.single("image") middleware runs:
+   a. Reads the file from the multipart request
+   b. Checks MIME type → if not image, throws Error
+   c. Checks file size → if > 5MB, throws MulterError
+   d. Stores file in memory (req.file.buffer)
+7. createPost controller runs:
+   a. Checks req.file exists → if not, returns 400
+   b. Checks caption exists and is not empty → if not, returns 400
+   c. Calls uploadFile(req.file.buffer) → sends to ImageKit → gets URL
+   d. Calls postModel.create() → saves to MongoDB
+   e. Returns 201 with post data
+8. Response sent to the client!
+
+IF ERROR at any step:
+   → next(error) is called
+   → globalErrorHandler catches it
+   → Determines error type (Multer, Validation, Custom, Generic)
+   → Sends appropriate error response (400 or 500)
 ```
-
----
-
-## Key Concepts for Beginners
-
-### What is an API?
-
-API (Application Programming Interface) is a way for two programs to communicate. Our backend is an API — it receives requests (like "create a post") and sends responses (like "here's the created post").
-
-### What is REST?
-
-REST (Representational State Transfer) is a set of rules for designing APIs:
-
-- Use URLs to represent resources (`/post` = posts)
-- Use HTTP methods for actions (`GET` = read, `POST` = create, `PUT` = update, `DELETE` = delete)
-- Send/receive data as JSON
-
-### What is HTTP?
-
-HTTP (HyperText Transfer Protocol) is how browsers and servers communicate. Every request has:
-
-- A **method** (GET, POST, PUT, DELETE)
-- A **URL** (where to send it)
-- **Headers** (metadata)
-- A **body** (data, optional)
-
-### What are HTTP Status Codes?
-
-Numbers that tell the client what happened:
-| Code | Meaning |
-| ---- | ------- |
-| `200` | OK — request succeeded |
-| `201` | Created — new resource was created |
-| `400` | Bad Request — client sent invalid data |
-| `404` | Not Found — URL doesn't exist |
-| `500` | Internal Server Error — something broke on the server |
-
-### What is `async/await`?
-
-JavaScript runs one line at a time. Some operations (database queries, API calls) take time. `async/await` lets you "pause" and wait for them to finish without freezing the whole program.
-
-```javascript
-// Without async/await (callback / promise hell):
-uploadFile(buffer).then(result => {
-    postModel.create({...}).then(post => {
-        res.json(post);
-    });
-});
-
-// With async/await (clean and readable):
-const result = await uploadFile(buffer);
-const post = await postModel.create({...});
-res.json(post);
-```
-
-### What is `module.exports` / `require()`?
-
-Node.js's system for sharing code between files:
-
-- `module.exports = something` — Makes `something` available to other files.
-- `const something = require("./file")` — Imports what `file.js` exported.
-
----
-
-## How to Add a New Feature
-
-**Example:** Adding a Users resource.
-
-### Step 1: Create the model
-
-Create `src/models/user.model.js`:
-
-```javascript
-const mongoose = require("mongoose");
-const userSchema = new mongoose.Schema({
-    name: String,
-    email: String,
-});
-module.exports = mongoose.model("User", userSchema);
-```
-
-### Step 2: Create the controller
-
-Create `src/controllers/user.controller.js`:
-
-```javascript
-const User = require("../models/user.model");
-
-const createUser = async (req, res) => {
-    /* ... */
-};
-const getUsers = async (req, res) => {
-    /* ... */
-};
-
-module.exports = { createUser, getUsers };
-```
-
-### Step 3: Create the route
-
-Create `src/routes/user.routes.js`:
-
-```javascript
-const express = require("express");
-const router = express.Router();
-const { createUser, getUsers } = require("../controllers/user.controller");
-
-router.post("/users", createUser);
-router.get("/users", getUsers);
-
-module.exports = router;
-```
-
-### Step 4: Mount in app.js
-
-```javascript
-const userRoutes = require("./routes/user.routes");
-app.use("/", userRoutes);
-```
-
----
-
-## License
-
-[ISC](LICENSE)

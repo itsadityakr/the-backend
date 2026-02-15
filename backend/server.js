@@ -1,35 +1,59 @@
-/**
- * server.js — Entry Point of the Application
- *
- * This is the very first file that runs when you start the app.
- * It has only two jobs:
- *   1. Connect to the database
- *   2. Start the HTTP server and listen for incoming requests
- *
- * WHY is this file at the root?
- *   Because it's the "main" file defined in package.json.
- *   When you run `npm start` or `npm run dev`, Node.js executes this file.
- *   It sits at the root so it's easy to find — it's the front door of your app.
- *
- * WHY is app setup separate from server startup?
- *   Separating `app.js` (Express config) from `server.js` (server startup)
- *   makes testing easier — you can import `app` in tests without starting
- *   an actual server.
- */
+// server.js — Entry point: connects to DB, starts server, handles shutdown
 
-// Import the configured Express application from src/app.js
-const app = require("./src/app");
+const app = require("./src/app"); // Configured Express app
+const { connectDB, mongoose } = require("./src/config/db"); // DB connection + mongoose instance
+const { DEFAULT_PORT } = require("./src/config/constants");
 
-// Import the database connection function from src/config/db.js
-const connectDB = require("./src/config/db");
+const PORT = process.env.PORT || DEFAULT_PORT;
 
-// Use the PORT from .env file, or fall back to 3001 if not set
-const PORT = process.env.PORT || 3001;
+// Start the server after connecting to the database
+async function startServer() {
+    await connectDB(); // Exits process if DB connection fails
 
-// Connect to MongoDB before starting the server
-connectDB();
+    const server = app.listen(PORT, () => {
+        console.log(`\n Server is running on http://localhost:${PORT}`);
+        console.log(` Health check: http://localhost:${PORT}/health`);
+        console.log(` API endpoints:`);
+        console.log(`   POST http://localhost:${PORT}/api/create-post`);
+        console.log(`   GET  http://localhost:${PORT}/api/post\n`);
+    });
 
-// Start listening for HTTP requests on the specified port
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    // Graceful shutdown — cleanly close server and DB connection
+    const gracefulShutdown = (signal) => {
+        console.log(`\n️  Received ${signal}. Starting graceful shutdown...`);
+        server.close(async () => {
+            console.log(" HTTP server closed");
+            try {
+                await mongoose.connection.close();
+                console.log(" MongoDB connection closed");
+            } catch (err) {
+                console.error(" Error closing MongoDB:", err.message);
+            }
+            console.log(" Server shut down gracefully. Goodbye!");
+            process.exit(0);
+        });
+
+        // Force exit if shutdown takes too long (10s)
+        setTimeout(() => {
+            console.error(" Shutdown timed out. Forcing exit...");
+            process.exit(1);
+        }, 10000);
+    };
+
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM")); // Cloud platform shutdown
+    process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C in terminal
+}
+
+// Catch unhandled promise rejections (async errors without try/catch)
+process.on("unhandledRejection", (reason) => {
+    console.error(" Unhandled Promise Rejection:", reason);
 });
+
+// Catch uncaught exceptions (sync errors without try/catch) — must exit
+process.on("uncaughtException", (error) => {
+    console.error(" Uncaught Exception:", error.message);
+    console.error("   Stack:", error.stack);
+    process.exit(1);
+});
+
+startServer();
